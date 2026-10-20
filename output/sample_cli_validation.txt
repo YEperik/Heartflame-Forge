@@ -1,0 +1,19 @@
+path	size_bytes	format	details
+/tmp/ps2_asset_samples/001_mmvi_logo.pss	4243460	MPEG program stream (PSS-like video)	pack start code 00 00 01 BA
+/tmp/ps2_asset_samples/009_title.pss	27934724	MPEG program stream (PSS-like video)	pack start code 00 00 01 BA
+/tmp/ps2_asset_samples/009_title_contact.png	548354	unknown	prefix=89 50 4E 47 0D 0A 1A 0A 00 00 00 0D 49 48 44 52
+/tmp/ps2_asset_samples/009_title_frame.png	4991	unknown	prefix=89 50 4E 47 0D 0A 1A 0A 00 00 00 0D 49 48 44 52
+/tmp/ps2_asset_samples/bulb1.map	5330	SL01 container/resource (structure partial)	field@0x04=0x00003908 (semantics unknown); field@0x08=5318; actual bytes after 0x0C=5318; field@0x08 vs size-12: MATCH
+/tmp/ps2_asset_samples/libsd.irx	30085	ELF executable/module	class=1 (1 means ELF32); data_encoding=1 (1 means little-endian); e_type=0x0000FF80; e_machine=0x00000008
+/tmp/ps2_asset_samples/tv_flower_001.tm2	9280	TIM2 texture	version=4; picture_count=1
+
+SUMMARY
+files_seen=7
+errors=0
+sl01_length_checks=1
+sl01_length_matches=1
+ELF executable/module=1
+MPEG program stream (PSS-like video)=2
+SL01 container/resource (structure partial)=1
+TIM2 texture=1
+unknown=2
