@@ -1,0 +1,53 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 21,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "release",
+      "displayName": "Release build",
+      "binaryDir": "${sourceDir}/build",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "PS2ASSET_BUILD_GUI": "ON",
+        "PS2ASSET_BUILD_CLI": "ON",
+        "PS2ASSET_ENABLE_ARCHIVE": "ON",
+        "BUILD_TESTING": "ON"
+      }
+    },
+    {
+      "name": "headless",
+      "displayName": "Core and CLI (no GUI dependency)",
+      "inherits": "release",
+      "binaryDir": "${sourceDir}/build-headless",
+      "cacheVariables": {
+        "PS2ASSET_BUILD_GUI": "OFF"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "release",
+      "configurePreset": "release"
+    },
+    {
+      "name": "headless",
+      "configurePreset": "headless"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "release",
+      "configurePreset": "release",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "headless",
+      "configurePreset": "headless",
+      "output": { "outputOnFailure": true }
+    }
+  ]
+}
