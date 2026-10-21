@@ -1,5 +1,5 @@
 #include "ps2asset/workbench/plugin_interface.hpp"
-
+#include <QPluginLoader>
 #include <QLabel>
 #include <QVBoxLayout>
 #include <QWidget>
