@@ -4,8 +4,13 @@
 #include <cctype>
 #include <limits>
 #include <memory>
+#include <filesystem>
+#include <fstream>
+#include <system_error>
 #include <stdexcept>
 #include <string_view>
+#include <unordered_map>
+#include <unordered_set>
 
 #ifdef PS2ASSET_HAS_LIBARCHIVE
 #include <archive.h>
@@ -76,6 +81,160 @@ std::vector<ArchiveEntryInfo> list_zip_entries(const std::string& archive_path,
         archive_read_data_skip(reader.get());
     }
     return result;
+#endif
+}
+
+
+void replace_zip_entry(const std::string& archive_path, const std::string& entry_path,
+                       const std::string& replacement_file, const std::string& output_archive,
+                       std::uint64_t max_replacement_size) {
+#ifndef PS2ASSET_HAS_LIBARCHIVE
+    (void)archive_path; (void)entry_path; (void)replacement_file; (void)output_archive; (void)max_replacement_size;
+    throw std::runtime_error("ZIP writing is unavailable because this build was configured without libarchive");
+#else
+    namespace fs = std::filesystem;
+    std::error_code ec;
+    const auto replacement_size = fs::file_size(replacement_file, ec);
+    if (ec || replacement_size > max_replacement_size) throw std::runtime_error("Replacement file is missing or exceeds size limit");
+    std::vector<std::uint8_t> replacement(static_cast<std::size_t>(replacement_size));
+    std::ifstream replacement_stream(replacement_file, std::ios::binary);
+    if (!replacement_stream || (!replacement.empty() && !replacement_stream.read(reinterpret_cast<char*>(replacement.data()), static_cast<std::streamsize>(replacement.size()))))
+        throw std::runtime_error("Unable to read replacement file");
+    replace_zip_entry_bytes(archive_path, entry_path, replacement, output_archive, max_replacement_size);
+#endif
+}
+
+void replace_zip_entry_bytes(const std::string& archive_path, const std::string& entry_path,
+                             const std::vector<std::uint8_t>& replacement, const std::string& output_archive,
+                             std::uint64_t max_replacement_size) {
+    ZipEntryReplacement item;
+    item.entry_path = entry_path;
+    item.bytes = replacement;
+    replace_zip_entries_bytes(archive_path, {item}, output_archive, max_replacement_size,
+                              max_replacement_size);
+}
+
+void replace_zip_entries_bytes(const std::string& archive_path,
+                               const std::vector<ZipEntryReplacement>& replacements,
+                               const std::string& output_archive,
+                               std::uint64_t max_replacement_size,
+                               std::uint64_t max_total_replacement_size) {
+#ifndef PS2ASSET_HAS_LIBARCHIVE
+    (void)archive_path; (void)replacements; (void)output_archive;
+    (void)max_replacement_size; (void)max_total_replacement_size;
+    throw std::runtime_error("ZIP writing is unavailable because this build was configured without libarchive");
+#else
+    namespace fs = std::filesystem;
+    if (replacements.empty()) throw std::runtime_error("At least one ZIP entry replacement is required");
+    if (max_replacement_size == 0U || max_total_replacement_size == 0U)
+        throw std::runtime_error("Replacement size limits must be positive");
+    if (fs::exists(output_archive)) throw std::runtime_error("Output archive already exists; refusing to overwrite it");
+
+    std::unordered_map<std::string, std::size_t> replacement_by_path;
+    replacement_by_path.reserve(replacements.size());
+    std::uint64_t total_replacement_bytes = 0;
+    for (std::size_t i = 0; i < replacements.size(); ++i) {
+        const auto& replacement = replacements[i];
+        if (replacement.entry_path.empty()) throw std::runtime_error("ZIP entry path must not be empty");
+        if (static_cast<std::uint64_t>(replacement.bytes.size()) > max_replacement_size)
+            throw std::runtime_error("Replacement data exceeds per-entry size limit: " + replacement.entry_path);
+        const auto size = static_cast<std::uint64_t>(replacement.bytes.size());
+        if (size > max_total_replacement_size - total_replacement_bytes)
+            throw std::runtime_error("Combined replacement data exceeds configured size limit");
+        total_replacement_bytes += size;
+        if (!replacement_by_path.emplace(replacement.entry_path, i).second)
+            throw std::runtime_error("Duplicate replacement target path: " + replacement.entry_path);
+    }
+
+    struct ReadDeleter { void operator()(struct archive* p) const noexcept { if (p) archive_read_free(p); } };
+    struct WriteDeleter { void operator()(struct archive* p) const noexcept { if (p) archive_write_free(p); } };
+    std::unique_ptr<struct archive, ReadDeleter> reader(archive_read_new());
+    std::unique_ptr<struct archive, WriteDeleter> writer(archive_write_new());
+    if (!reader || !writer) throw std::runtime_error("Unable to allocate ZIP reader/writer");
+    archive_read_support_filter_all(reader.get());
+    archive_read_support_format_zip(reader.get());
+    if (archive_read_open_filename(reader.get(), archive_path.c_str(), 64U * 1024U) != ARCHIVE_OK)
+        throw std::runtime_error(std::string("Unable to open source ZIP: ") + (archive_error_string(reader.get()) ? archive_error_string(reader.get()) : "unknown error"));
+    if (archive_write_set_format_zip(writer.get()) != ARCHIVE_OK)
+        throw std::runtime_error("Unable to configure ZIP writer");
+
+    const fs::path output_path(output_archive);
+    const fs::path temp_path = output_path.parent_path() / (output_path.filename().string() + ".tmp-ps2asset");
+    if (fs::exists(temp_path)) throw std::runtime_error("Temporary output path already exists; remove it or choose another output name");
+    bool temp_created = false;
+    std::unordered_set<std::string> found_targets;
+    found_targets.reserve(replacements.size());
+    try {
+        temp_created = true; // Also clean a partially created file if opening the writer fails.
+        if (archive_write_open_filename(writer.get(), temp_path.string().c_str()) != ARCHIVE_OK)
+            throw std::runtime_error(std::string("Unable to create temporary ZIP: ") + (archive_error_string(writer.get()) ? archive_error_string(writer.get()) : "unknown error"));
+        archive_entry* input_entry = nullptr;
+        std::vector<std::uint8_t> buffer(128U * 1024U);
+        for (;;) {
+            const int status = archive_read_next_header(reader.get(), &input_entry);
+            if (status == ARCHIVE_EOF) break;
+            if (status < ARCHIVE_WARN) throw std::runtime_error(std::string("Error reading source ZIP: ") + (archive_error_string(reader.get()) ? archive_error_string(reader.get()) : "unknown error"));
+            const char* raw_name = archive_entry_pathname_utf8(input_entry);
+            if (!raw_name) raw_name = archive_entry_pathname(input_entry);
+            const std::string name = raw_name ? raw_name : "";
+            const auto replacement_it = replacement_by_path.find(name);
+            const bool target = replacement_it != replacement_by_path.end();
+            if (target) {
+                if (!found_targets.insert(name).second || archive_entry_filetype(input_entry) != AE_IFREG)
+                    throw std::runtime_error("Target ZIP entry is duplicated or is not a regular file: " + name);
+            }
+            archive_entry* output_entry = archive_entry_clone(input_entry);
+            if (!output_entry) throw std::runtime_error("Unable to clone ZIP entry metadata");
+            if (target) archive_entry_set_size(output_entry, static_cast<la_int64_t>(replacements[replacement_it->second].bytes.size()));
+            if (archive_write_header(writer.get(), output_entry) != ARCHIVE_OK) {
+                const std::string error = archive_error_string(writer.get()) ? archive_error_string(writer.get()) : "unknown error";
+                archive_entry_free(output_entry);
+                throw std::runtime_error("Unable to write ZIP entry header: " + error);
+            }
+            archive_entry_free(output_entry);
+            if (target) {
+                const auto& bytes = replacements[replacement_it->second].bytes;
+                std::size_t offset = 0;
+                while (offset < bytes.size()) {
+                    const auto n = archive_write_data(writer.get(), bytes.data() + offset, bytes.size() - offset);
+                    if (n <= 0) throw std::runtime_error("Unable to write replacement entry payload: " + name);
+                    offset += static_cast<std::size_t>(n);
+                }
+                archive_read_data_skip(reader.get());
+            } else {
+                for (;;) {
+                    const auto n = archive_read_data(reader.get(), buffer.data(), buffer.size());
+                    if (n == 0) break;
+                    if (n < 0) throw std::runtime_error(std::string("Unable to read ZIP entry payload: ") + (archive_error_string(reader.get()) ? archive_error_string(reader.get()) : "unknown error"));
+                    std::size_t offset = 0;
+                    const auto count = static_cast<std::size_t>(n);
+                    while (offset < count) {
+                        const auto written = archive_write_data(writer.get(), buffer.data() + offset, count - offset);
+                        if (written <= 0) throw std::runtime_error("Unable to copy ZIP entry payload");
+                        offset += static_cast<std::size_t>(written);
+                    }
+                }
+            }
+        }
+        if (found_targets.size() != replacements.size()) {
+            for (const auto& replacement : replacements) {
+                if (found_targets.find(replacement.entry_path) == found_targets.end())
+                    throw std::runtime_error("Target entry was not found in source ZIP: " + replacement.entry_path);
+            }
+        }
+        if (archive_write_close(writer.get()) != ARCHIVE_OK) throw std::runtime_error(std::string("Unable to finalize ZIP: ") + (archive_error_string(writer.get()) ? archive_error_string(writer.get()) : "unknown error"));
+        if (archive_read_close(reader.get()) != ARCHIVE_OK) throw std::runtime_error("Unable to close source ZIP cleanly");
+        std::error_code ec;
+        fs::rename(temp_path, output_path, ec);
+        if (ec) throw std::runtime_error("Unable to commit output ZIP: " + ec.message());
+        temp_created = false;
+    } catch (...) {
+        // Release file handles before removing the temporary output (important on Windows).
+        writer.reset();
+        reader.reset();
+        if (temp_created) { std::error_code ignored; fs::remove(temp_path, ignored); }
+        throw;
+    }
 #endif
 }
 
