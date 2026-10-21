@@ -1,51 +1,46 @@
 # PS2 Asset Workbench
 
-**Versi 0.4.0 — validasi round-trip tekstur nyata, desktop GUI modular, Texture Workshop, dan extension API**
+**Versi 0.2.0 — fondasi GUI C++17/CMake dan modul tekstur TIM2**
 
-PS2 Asset Workbench adalah aplikasi C++17/CMake untuk inspeksi dan modding aset PlayStation 2. Core parser sengaja tidak bergantung pada Qt, sehingga dapat digunakan oleh desktop UI, CLI, tes otomatis, atau tool lain.
+PS2 Asset Workbench adalah proyek modular untuk inspeksi dan modding aset game PS2. Pekerjaan pertama difokuskan pada tekstur TIM2 di arsip yang disediakan pengguna. Proyek memisahkan parser format dari GUI agar modul model, audio, script, dan format proprietary dapat ditambahkan tanpa mengikatnya ke antarmuka.
 
-## Perubahan v0.4.0
+## Fitur modul tekstur saat ini
 
-- Menambahkan `ps2asset-texture-validate`, alat validasi read-only untuk TIM2 tunggal atau ZIP yang berisi file `.tm2`.
-- Validator mengganti tekstur menggunakan pola sintetis di memori, memastikan ukuran file tetap, memverifikasi byte di luar payload target tidak berubah, lalu mem-parse dan mendekode hasil kembali. Input file tidak ditulis.
-- Menambahkan validator self-test ke CTest agar pipeline replacement diuji otomatis tanpa mendistribusikan aset game sebagai fixture.
-- Pada sampel asli yang tersedia saat pengembangan, validator lulus untuk 61 dari 61 tekstur. Hasil ini membuktikan round-trip pada representasi yang ditangani parser, bukan kompatibilitas runtime game/emulator.
+- Buka file `.tm2` secara langsung.
+- Jelajahi semua entri `.tm2` dalam `.zip` dengan libarchive (jika tersedia saat build).
+- Tampilkan daftar gambar beserta dimensi, tipe, ukuran data, CLUT/palette, PSM, dan status dukungan.
+- Pratinjau tekstur dengan alpha di atas latar checkerboard.
+- Ekspor tekstur yang didukung menjadi PNG.
+- Import gambar PNG/BMP/JPEG/TIFF, dengan konfirmasi resize bila dimensi berbeda.
+- Ganti indeks pixel dan palette dalam memori, lalu simpan seluruh file TIM2 menjadi file `.tm2` baru secara atomik menggunakan `QSaveFile`.
+- CLI untuk inspeksi header dan diagnostik TIM2; unit test untuk parser/decode/replace.
 
-## Workspace GUI
+Aplikasi **tidak menimpa berkas sumber secara otomatis**. Bila tekstur dibuka dari ZIP, hasil yang disimpan adalah file `.tm2` mandiri; proyek versi ini belum membangun ulang arsip ZIP asli.
 
-- **Ikhtisar** — status aset yang sedang dibuka, pintasan modul, dan catatan dukungan format.
-- **Texture Workshop** — buka `.tm2` tunggal atau `.zip`; daftar gambar, pratinjau transparansi, metadata, ekspor PNG, impor/ganti dari gambar umum, dan penyimpanan `.tm2` hasil edit sebagai file baru.
-- **Archive Browser** — indeks metadata entri ZIP secara read-only, tabel path/tipe/ukuran, filter path, dan alur meneruskan entri `.tm2` ke Texture Workshop.
-- **Binary Inspector** — inspeksi signature/header read-only, detail format yang sudah dikenali, hex dump hingga 8 KiB awal, dan pencarian string ASCII pada file yang dimuat hingga 64 MiB.
-- **3D Model & Animasi**, **Audio & Video**, serta **Script & Teks** — workspace di shell UI untuk tahapan selanjutnya. Halaman tersebut secara eksplisit ditandai belum mengaktifkan parser/decoder format.
-- **Diagnostics / Activity Log** — menampilkan operasi asset, hasil pemuatan extension, dan kesalahan yang relevan. Panel dapat dibuka dari menu Tampilan.
-- **Extension modules** — plugin Qt dinamis dapat menambahkan halaman workspace tanpa mengubah shell utama. Sample plugin dibangun secara default ketika Qt Widgets tersedia.
+## Profil format yang sudah diuji
 
-## Modul tekstur: batas kemampuan saat ini
+Pada arsip sampel yang diaudit, ada 61 file `.tm2`. Seluruh 61 file berhasil diparse, didekode, dan memiliki profil yang mendukung penggantian:
 
-Import/replacement hanya diizinkan pada profil TIM2 yang sudah divalidasi: indexed 8-bit, CLUT RGBA32 256 warna, satu mip level, header gambar 48 byte, dan buffer berukuran tetap. Dimensi gambar yang diimpor dapat disesuaikan setelah konfirmasi. Palette/index plane diganti tanpa merombak ukuran container. Output hasil edit **tidak menimpa sumber secara otomatis**. Bila sumber berasal dari ZIP, hasil disimpan sebagai `.tm2` mandiri; penulisan ulang ZIP belum diimplementasikan.
+- TIM2 version: `4`, format type: `0`
+- Resolusi: `128 × 64`
+- Image type: indexed 8-bit (`image_type = 5`, PSMT8)
+- CLUT: 256 warna RGBA32 (`clut_type = 3`, 1024 byte)
+- Header gambar: 48 byte
+- Data indeks gambar: 8192 byte
+- Satu level mipmap
 
-Untuk arsip sampel pengguna, hasil audit sebelumnya menemukan 61 file `.tm2`; seluruh 61 file itu berhasil diparse/didekode dan sesuai profil replacement. Temuan ini hanya berlaku untuk sampel yang diperiksa, bukan semua TIM2 atau semua game.
+Hasil ini berlaku untuk 61 tekstur dalam arsip sampel yang diberikan, bukan klaim bahwa semua file TIM2 atau semua game PS2 memakai profil tersebut. Import saat ini sengaja menolak profil yang tidak sesuai daripada menulis data menggunakan asumsi yang belum terbukti.
 
-## Build prerequisites
+## Dependensi
 
-- CMake 3.16+
+- CMake 3.16 atau lebih baru
 - Compiler C++17 (GCC, Clang, atau MSVC)
-- Qt 6 Widgets atau Qt 5.12+ Widgets untuk GUI
-- `libarchive` development package untuk dukungan ZIP (opsional saat konfigurasi, diperlukan untuk ZIP pada GUI)
+- Qt 6 Widgets atau Qt 5.12+ Widgets untuk aplikasi desktop
+- libarchive development package untuk penjelajahan ZIP (opsional, tetapi diperlukan jika ingin membuka `.zip` dari GUI)
 
-Contoh paket untuk Ubuntu/Debian:
+Jika Qt development files tidak terpasang, konfigurasi CMake masih dapat membangun core, CLI, dan test; target GUI akan dilewati dan CMake menampilkan peringatan. Instal paket pengembangan Qt, lalu konfigurasi ulang.
 
-```sh
-sudo apt-get update
-sudo apt-get install --yes build-essential cmake qt6-base-dev libarchive-dev
-```
-
-Untuk Windows, pasang Visual Studio 2022 dengan workload C++ Desktop, CMake, Qt 6 Widgets (installer Qt atau Qt VS Tools), dan libarchive yang kompatibel dengan toolchain. Untuk macOS, pasang compiler dari Xcode Command Line Tools, CMake, Qt 6, dan libarchive melalui package manager.
-
-Jika Qt development files tidak tersedia, target core/CLI/test tetap dapat dibangun, sedangkan target GUI akan dilewati dengan pesan CMake. Untuk mendapatkan GUI + sample plugin, Qt development package diperlukan.
-
-### Linux/macOS/Windows via CMake
+### Build di Linux/macOS
 
 ```sh
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
@@ -53,34 +48,15 @@ cmake --build build --config Release
 ctest --test-dir build --output-on-failure
 ```
 
-Headless build (tanpa GUI):
+Untuk hanya membangun core/CLI/test di lingkungan tanpa Qt:
 
 ```sh
-cmake -S . -B build-headless -DPS2ASSET_BUILD_GUI=OFF -DCMAKE_BUILD_TYPE=Release
-cmake --build build-headless --config Release
-ctest --test-dir build-headless --output-on-failure
+cmake -S . -B build -DPS2ASSET_BUILD_GUI=OFF -DCMAKE_BUILD_TYPE=Release
+cmake --build build --config Release
+ctest --test-dir build --output-on-failure
 ```
 
-Preset CMake (CMake 3.21+):
-
-```sh
-cmake --preset release
-cmake --build --preset release
-ctest --preset release
-```
-
-Jika Qt Widgets tersedia, executable desktop `ps2asset-workbench` dibuat. Saat sample plugin diaktifkan (default), library extension ditempatkan ke `build/plugins/` di samping executable.
-
-### GUI startup smoke test
-
-Di lingkungan dengan Qt lengkap:
-
-```sh
-# Linux tanpa display server
-QT_QPA_PLATFORM=offscreen ./build/ps2asset-workbench --smoke-test
-```
-
-Smoke test memverifikasi konsistensi navigasi/stack halaman dan keberhasilan memuat sample plugin bila opsi tersebut aktif.
+Jika Qt tersedia, executable GUI bernama `ps2asset-workbench` akan dibuat di folder build. Pada Windows, target dapat dibangun melalui CMake + Visual Studio generator dan Qt 5/6 yang kompatibel dengan compiler yang dipilih.
 
 ### CLI
 
@@ -93,56 +69,34 @@ Smoke test memverifikasi konsistensi navigasi/stack halaman dan keberhasilan mem
 
 # Ekspor diagnostik ke PPM (GUI mengekspor PNG)
 ./build/ps2asset-texture export path/to/texture.tm2 0 output.ppm
-
-# Validasi alur ganti → parse ulang → decode ulang tanpa menulis file
-./build/ps2asset-texture-validate path/to/texture.tm2
-./build/ps2asset-texture-validate path/to/assets.zip
-
-# Self-test sintetis (juga didaftarkan ke CTest)
-./build/ps2asset-texture-validate --self-test
 ```
 
 ## Struktur proyek
 
 ```text
-include/ps2asset/                    API core (inspection, archive, TIM2)
-include/ps2asset/workbench/          public Qt plugin interface v1.0
-src/inspect.cpp                      signature/header inspection
-src/texture/tim2.cpp                TIM2 parse/decode/replace
-src/archive/zip_reader.cpp           ZIP entry listing and TIM2 extraction via libarchive
-src/gui/main_window.*                desktop shell and workspaces
-src/gui/plugin_manager.*             dynamic module discovery/lifetime
-src/gui/plugins/sample_plugin.cpp     sample plugin for CI/smoke test
-src/main.cpp                         CLI header inspection
-src/texture_cli.cpp                  CLI texture diagnostics
-tools/validate_textures.cpp           end-to-end TIM2 replacement validator
-plugins/README.md                    extension authoring notes
-tests/                               core and ZIP metadata unit tests
-.github/workflows/ci.yml             Qt GUI build, plugin build, test, smoke test
+include/ps2asset/       API inti (header inspection, TIM2, archive)
+src/inspect.cpp         inspeksi signature/header
+src/texture/tim2.cpp    parser, decoder, palette quantizer, replacement
+src/archive/            pembacaan `.tm2` dari ZIP via libarchive
+src/gui/                aplikasi desktop Qt Widgets
+src/main.cpp            CLI inspeksi
+src/texture_cli.cpp     CLI tekstur
+ tests/                 unit test tanpa aset komersial
+ docs/                  catatan arsitektur dan batas format
+ tools/                 skrip audit archive
 ```
 
-## Extension API
+## Batas dan pekerjaan berikutnya
 
-Public interface: `include/ps2asset/workbench/plugin_interface.hpp`.
+1. Validasi lewat game/emulator belum dilakukan; output hasil edit tidak boleh dianggap kompatibel sebelum diuji.
+2. Import dibatasi pada TIM2 indexed 8-bit dengan CLUT RGBA32 256 warna, satu mip level, header 48 byte, dan dimensi yang sama setelah resize di GUI.
+3. Dukungan CLUT/texture swizzle di luar sampel belum diimplementasikan.
+4. GUI tidak menulis ulang ZIP; hasil edit dari arsip perlu disimpan sebagai `.tm2` mandiri.
+5. Format `SL01`, model 3D, audio, script/event, dan format lain tetap modul kerja berikutnya.
 
-- IID: `org.ps2asset.workbench.IWorkbenchPlugin/1.0`
-- Implement `id()`, `displayName()`, `description()`, and `createWidget(QWidget*)`.
-- Export the implementation with Qt's `Q_PLUGIN_METADATA` and `Q_INTERFACES`.
-- Drop compatible plugin library into `plugins/` beside the executable or the Qt application-data `plugins/` folder.
-- Each plugin ID must be unique. Invalid or incompatible extensions are skipped and logged; they must not stop application startup.
+## Pengujian yang dilakukan pada sesi ini
 
-Plugin code is native code and should be installed only from trusted sources. Public API compatibility is versioned through the IID; incompatible interface changes require a new IID.
-
-## Safety and known limitations
-
-1. Compatibility of generated TIM2 output in the game or emulator has not yet been confirmed.
-2. Import rejects TIM2 profiles outside the current indexed-8 + RGBA32 CLUT profile rather than guessing.
-3. TIM2 CLUT/texture swizzle variations outside the tested sample are not implemented.
-4. GUI does not rewrite ZIP archives.
-5. GUI/plugin compilation and PNG interaction tests remain pending on a host with Qt development headers.
-6. Model, audio, video, and script pages are UI scaffolding only; no full proprietary decoder/writer is claimed.
-7. Binary Inspector is read-only and limits a loaded file to 64 MiB; its hex preview shows 8 KiB, while ASCII search scans the loaded bytes.
-
-## Tests and CI
-
-Headless tests cover header/signature inspection, TIM2 decode/replacement, ZIP listing, and a synthetic end-to-end replacement → reparse → decode round-trip. The `ps2asset-texture-validate` utility was also run against the supplied sample ZIP during development: 61/61 TIM2 files passed the in-memory replacement + reparse/decode validation, with no failures and no input files written. With Qt installed, CI also builds the GUI and sample plugin and runs `--smoke-test` in Qt offscreen mode. The current local environment lacks Qt development headers and cannot resolve `deb.debian.org`, so GUI/plugin build and PNG codec interactions remain pending Qt-enabled CI/desktop validation.
+- Build core, CLI, dan test dengan CMake/GCC berhasil.
+- CTest: **2/2 tes lulus** (`header-inspection`, `tim2-decode-and-replace`).
+- Integrasi terhadap arsip sampel: **61 entri TIM2, 61 gambar, 61 mendukung replace, 61 berhasil decode, 0 gagal decode**.
+- GUI Qt belum dapat dikompilasi di lingkungan pembuatan ini karena hanya runtime Qt terpasang; header/development package Qt tidak tersedia dan pembaruan package repository timed out. Source GUI sudah disertakan, tetapi perlu diverifikasi build pada lingkungan yang memasang Qt Widgets.
