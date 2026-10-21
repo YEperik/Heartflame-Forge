@@ -15,6 +15,7 @@
         "PS2ASSET_BUILD_GUI": "ON",
         "PS2ASSET_BUILD_CLI": "ON",
         "PS2ASSET_ENABLE_ARCHIVE": "ON",
+        "PS2ASSET_ENABLE_PNG": "ON",
         "BUILD_TESTING": "ON",
         "PS2ASSET_BUILD_SAMPLE_PLUGIN": "ON"
       }
