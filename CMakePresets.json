@@ -15,7 +15,8 @@
         "PS2ASSET_BUILD_GUI": "ON",
         "PS2ASSET_BUILD_CLI": "ON",
         "PS2ASSET_ENABLE_ARCHIVE": "ON",
-        "BUILD_TESTING": "ON"
+        "BUILD_TESTING": "ON",
+        "PS2ASSET_BUILD_SAMPLE_PLUGIN": "ON"
       }
     },
     {
@@ -24,7 +25,8 @@
       "inherits": "release",
       "binaryDir": "${sourceDir}/build-headless",
       "cacheVariables": {
-        "PS2ASSET_BUILD_GUI": "OFF"
+        "PS2ASSET_BUILD_GUI": "OFF",
+        "PS2ASSET_BUILD_SAMPLE_PLUGIN": "ON"
       }
     }
   ],
@@ -42,12 +44,16 @@
     {
       "name": "release",
       "configurePreset": "release",
-      "output": { "outputOnFailure": true }
+      "output": {
+        "outputOnFailure": true
+      }
     },
     {
       "name": "headless",
       "configurePreset": "headless",
-      "output": { "outputOnFailure": true }
+      "output": {
+        "outputOnFailure": true
+      }
     }
   ]
 }
