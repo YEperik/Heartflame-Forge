@@ -1,5 +1,8 @@
 #include "ps2asset/archive/zip_reader.hpp"
 #include "ps2asset/texture/tim2.hpp"
+#ifdef PS2ASSET_HAS_PNG
+#include "ps2asset/image/png.hpp"
+#endif
 
 #include <algorithm>
 #include <cctype>
@@ -80,7 +83,7 @@ void verify_only_target_payload_changed(const std::vector<std::uint8_t>& before,
 
 void validate_asset(const AssetInput& asset, std::size_t& picture_count,
                     std::size_t& supported_count, std::size_t& replaced_count,
-                    std::size_t& unsupported_count) {
+                    std::size_t& unsupported_count, bool png_roundtrip = false) {
     auto file = Tim2File::parse(asset.bytes);
     const auto original_size = file.bytes().size();
     const auto initial_pictures = file.pictures();
@@ -100,7 +103,21 @@ void validate_asset(const AssetInput& asset, std::size_t& picture_count,
             throw std::runtime_error("Decoded image dimensions/buffer are invalid in " + asset.name + " picture " + std::to_string(i));
         }
         ++supported_count;
-        const auto replacement = make_pattern(picture.width, picture.height, i);
+        RgbaImage replacement;
+        if (png_roundtrip) {
+#ifdef PS2ASSET_HAS_PNG
+            const auto png_bytes = ps2asset::image::encode_png(decoded_original);
+            replacement = ps2asset::image::decode_png(png_bytes);
+            if (replacement.width != decoded_original.width || replacement.height != decoded_original.height ||
+                replacement.pixels != decoded_original.pixels) {
+                throw std::runtime_error("Lossless PNG encode/decode mismatch in " + asset.name + " picture " + std::to_string(i));
+            }
+#else
+            throw std::runtime_error("PNG round-trip mode requires a build with libpng development files");
+#endif
+        } else {
+            replacement = make_pattern(picture.width, picture.height, i);
+        }
         const auto before = file.bytes();
         file.replace_picture_rgba8_palette(i, replacement);
         verify_only_target_payload_changed(before, file.bytes(), picture);
@@ -129,7 +146,8 @@ void validate_asset(const AssetInput& asset, std::size_t& picture_count,
         }
     }
     std::cout << "  PASS " << asset.name << " (" << reparsed.picture_count() << " picture(s), "
-              << original_size << " bytes; reparsed successfully)\n";
+              << original_size << " bytes; " << (png_roundtrip ? "PNG export/import + replacement + reparse" : "synthetic replacement + reparse")
+              << " passed)\n";
 }
 
 
@@ -185,17 +203,13 @@ void usage() {
     std::cerr << "PS2 Asset Workbench - read-only TIM2 replacement round-trip validator\n"
               << "Usage: ps2asset-texture-validate <input.tm2|archive.zip>\n"
               << "       ps2asset-texture-validate --self-test\n"
-              << "Tests replacement in memory only; it does not write or alter input files.\n";
+              << "       ps2asset-texture-validate --png-roundtrip <input.tm2|archive.zip>\n"
+              << "Tests run in memory only; no input or output files are written. PNG mode requires libpng.\n";
 }
 }  // namespace
 
 int main(int argc, char** argv) {
-    if (argc != 2) {
-        usage();
-        return 2;
-    }
-
-    if (std::string(argv[1]) == "--self-test") {
+    if (argc == 2 && std::string(argv[1]) == "--self-test") {
         try {
             std::size_t picture_count = 0, supported_count = 0, replaced_count = 0, unsupported_count = 0;
             const AssetInput fixture{"<generated TIM2 fixture>", make_self_test_tm2()};
@@ -211,7 +225,22 @@ int main(int argc, char** argv) {
         }
     }
 
-    const std::string input_path = argv[1];
+    bool png_roundtrip = false;
+    std::string input_path;
+    if (argc == 2) {
+        input_path = argv[1];
+    } else if (argc == 3 && std::string(argv[1]) == "--png-roundtrip") {
+#ifdef PS2ASSET_HAS_PNG
+        png_roundtrip = true;
+        input_path = argv[2];
+#else
+        std::cerr << "PNG round-trip mode requires a build with libpng development files.\n";
+        return 2;
+#endif
+    } else {
+        usage();
+        return 2;
+    }
     const auto extension = lower(input_path.substr(input_path.find_last_of('.') == std::string::npos
         ? input_path.size() : input_path.find_last_of('.')));
     std::vector<AssetInput> assets;
@@ -232,13 +261,13 @@ int main(int argc, char** argv) {
         std::size_t failed_count = 0;
         for (const auto& asset : assets) {
             try {
-                validate_asset(asset, picture_count, supported_count, replaced_count, unsupported_count);
+                validate_asset(asset, picture_count, supported_count, replaced_count, unsupported_count, png_roundtrip);
             } catch (const std::exception& error) {
                 ++failed_count;
                 std::cerr << "  FAIL " << asset.name << ": " << error.what() << '\n';
             }
         }
-        std::cout << "\nSummary\n"
+        std::cout << "\nSummary (" << (png_roundtrip ? "PNG round-trip" : "synthetic replacement") << ")\n"
                   << "  Assets: " << assets.size() << '\n'
                   << "  Pictures parsed: " << picture_count << '\n'
                   << "  Pictures in supported profile: " << supported_count << '\n'
