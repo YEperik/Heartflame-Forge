@@ -210,7 +210,7 @@ void MainWindow::buildUi() {
     connect(binaryAction, &QAction::triggered, this, [this]() { selectModule(BinaryModule); });
     connect(aboutAction, &QAction::triggered, this, [this]() {
         QMessageBox::about(this, QStringLiteral("Tentang PS2 Asset Workbench"),
-            QStringLiteral("<b>PS2 Asset Workbench 0.3.0</b><br>Desktop workbench C++17/CMake untuk eksplorasi aset game PS2.<br><br>Modul tersedia: Texture Workshop, Archive Texture Browser, Binary Inspector, serta API extension dinamis.<br>Import TIM2 saat ini dibatasi pada profil indexed 8-bit + CLUT RGBA32 yang telah divalidasi dari sampel.<br><br>Modul model, audio, dan script ditampilkan sebagai ruang kerja lanjutan; decoder untuk format tersebut belum diimplementasikan."));
+            QStringLiteral("<b>PS2 Asset Workbench 0.6.0</b><br>Desktop workbench C++17/CMake untuk eksplorasi aset game PS2.<br><br>Modul tersedia: Texture Workshop, Archive Texture Browser, Binary Inspector, ZIP entry repacking melalui CLI, serta API extension dinamis.<br>Import TIM2 saat ini dibatasi pada profil indexed 8-bit + CLUT RGBA32 yang telah divalidasi dari sampel.<br><br>Modul model, audio, dan script ditampilkan sebagai ruang kerja lanjutan; decoder untuk format tersebut belum diimplementasikan."));
     });
 
     auto* root = new QWidget(this);
@@ -621,7 +621,9 @@ void MainWindow::openPath(const QString& path) {
         if (suffix != QStringLiteral("tm2") && suffix != QStringLiteral("zip")) {
             throw std::runtime_error("Pilih file .tm2 atau .zip");
         }
-        if (!confirmDiscardUnsavedChanges()) return;
+        // Parse/validate the candidate source before asking whether to discard edits.
+        // openTim2/openZip commit new documents only after parsing succeeds and
+        // after the user confirms the discard prompt.
         if (suffix == QStringLiteral("tm2")) openTim2(path);
         else openZip(path);
     } catch (const std::exception& error) {
@@ -655,6 +657,7 @@ void MainWindow::openTim2(const QString& path) {
     auto bytes = readFileBytes(path);
     auto parsed = std::make_unique<ps2asset::texture::Tim2File>(
         ps2asset::texture::Tim2File::parse(std::move(bytes)));
+    if (!confirmDiscardUnsavedChanges()) return;
     documents_.clear();
     TextureDocument doc;
     doc.name = QFileInfo(path).fileName();
@@ -693,6 +696,7 @@ void MainWindow::openZip(const QString& path) {
     if (loaded.empty()) {
         throw std::runtime_error("Tidak ditemukan file .tm2 yang dapat dibaca pada ZIP tersebut");
     }
+    if (!confirmDiscardUnsavedChanges()) return;
     documents_ = std::move(loaded);
     currentPath_ = path;
     selectedDocument_ = -1;
@@ -845,7 +849,7 @@ void MainWindow::importSelectedTexture() {
     if (image.size() != QSize(pic.width, pic.height)) {
         const auto answer = QMessageBox::question(this, QStringLiteral("Sesuaikan dimensi?"),
             QStringLiteral("Gambar berukuran %1×%2, sedangkan target adalah %3×%4.\n\nSkalakan otomatis ke ukuran tekstur?")
-                .arg(image.width()).arg(image.height()).arg(pic.width).arg(pic.height)
+                .arg(image.width()).arg(image.height()).arg(pic.width).arg(pic.height()),
             QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes);
         if (answer != QMessageBox::Yes) return;
         image = image.scaled(QSize(pic.width, pic.height), Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
