@@ -1,4 +1,5 @@
 #include "ps2asset/texture/tim2.hpp"
+#include "ps2asset/archive/zip_reader.hpp"
 #ifdef PS2ASSET_HAS_PNG
 #include "ps2asset/image/png.hpp"
 #endif
@@ -9,6 +10,8 @@
 #include <fstream>
 #include <filesystem>
 #include <iostream>
+#include <sstream>
+#include <vector>
 #include <limits>
 #include <string>
 
@@ -17,6 +20,8 @@ void usage() {
     std::cerr << "PS2 Asset Workbench - TIM2 CLI helper\n"
               << "Usage:\n"
               << "  ps2asset-texture info <input.tm2>\n"
+              << "  ps2asset-texture replace-zip-entry <input.zip> <entry-path> <replacement.tm2> <output.zip>\n"
+              << "  ps2asset-texture replace-zip-entries <input.zip> <manifest.tsv> <output.zip>\n"
               << "  ps2asset-texture export <input.tm2> <picture-index> <output.ppm>\n"
 #ifdef PS2ASSET_HAS_PNG
               << "  ps2asset-texture export-png <input.tm2> <picture-index> <output.png>\n"
@@ -52,6 +57,57 @@ int main(int argc, char** argv) {
         if (argc < 3) { usage(); return 2; }
         const std::string command = argv[1];
         const std::string input_path = argv[2];
+        if (command == "replace-zip-entry") {
+            if (argc != 6) { usage(); return 2; }
+            // Parse the replacement first so a random/non-TIM2 file cannot be
+            // inserted accidentally into a texture entry.
+            (void)ps2asset::texture::Tim2File::parse(ps2asset::texture::read_binary_file(argv[4]));
+            ps2asset::archive::replace_zip_entry(input_path, argv[3], argv[4], argv[5]);
+            std::cout << "Replaced ZIP entry '" << argv[3] << "' in a new archive: " << argv[5]
+                      << ". Other entries were copied; source archive was not overwritten.\n";
+            return 0;
+        }
+        if (command == "replace-zip-entries") {
+            if (argc != 5) { usage(); return 2; }
+            namespace fs = std::filesystem;
+            const fs::path manifestPath(argv[3]);
+            std::ifstream manifest(manifestPath);
+            if (!manifest) throw std::runtime_error("Cannot open replacement manifest: " + manifestPath.string());
+
+            std::vector<ps2asset::archive::ZipEntryReplacement> replacements;
+            std::string line;
+            std::size_t lineNumber = 0;
+            std::uint64_t totalBytes = 0;
+            constexpr std::uint64_t kPerEntryLimit = 32ULL * 1024ULL * 1024ULL;
+            constexpr std::uint64_t kTotalLimit = 256ULL * 1024ULL * 1024ULL;
+            while (std::getline(manifest, line)) {
+                ++lineNumber;
+                if (!line.empty() && line.back() == '\r') line.pop_back();
+                const auto first = line.find_first_not_of(" \t");
+                if (first == std::string::npos || line[first] == '#') continue;
+                const auto separator = line.find('\t');
+                if (separator == std::string::npos || separator == 0U || separator + 1U >= line.size()) {
+                    throw std::runtime_error("Manifest line " + std::to_string(lineNumber) +
+                        " must contain entry-path, one TAB, and replacement file path");
+                }
+                const std::string entryPath = line.substr(0, separator);
+                fs::path replacementPath(line.substr(separator + 1U));
+                if (replacementPath.is_relative()) replacementPath = manifestPath.parent_path() / replacementPath;
+                auto bytes = ps2asset::texture::read_binary_file(replacementPath.string(), kPerEntryLimit);
+                (void)ps2asset::texture::Tim2File::parse(bytes);
+                if (static_cast<std::uint64_t>(bytes.size()) > kTotalLimit - totalBytes)
+                    throw std::runtime_error("Combined replacement data exceeds 256 MiB limit");
+                totalBytes += static_cast<std::uint64_t>(bytes.size());
+                replacements.push_back({entryPath, std::move(bytes)});
+            }
+            if (replacements.empty()) throw std::runtime_error("Manifest contains no replacement rows");
+            if (!manifest.eof() && manifest.fail()) throw std::runtime_error("Error while reading replacement manifest");
+            ps2asset::archive::replace_zip_entries_bytes(input_path, replacements, argv[4],
+                                                         kPerEntryLimit, kTotalLimit);
+            std::cout << "Replaced " << replacements.size() << " ZIP entries in new archive: " << argv[4]
+                      << ". Other entries were copied; source archive was not overwritten.\n";
+            return 0;
+        }
         auto tim2 = ps2asset::texture::Tim2File::parse(ps2asset::texture::read_binary_file(input_path));
 
         if (command == "info") {
