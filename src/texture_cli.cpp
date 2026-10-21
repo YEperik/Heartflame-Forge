@@ -1,10 +1,15 @@
 #include "ps2asset/texture/tim2.hpp"
+#ifdef PS2ASSET_HAS_PNG
+#include "ps2asset/image/png.hpp"
+#endif
 
 #include <algorithm>
 #include <cstdint>
 #include <exception>
 #include <fstream>
+#include <filesystem>
 #include <iostream>
+#include <limits>
 #include <string>
 
 namespace {
@@ -12,7 +17,13 @@ void usage() {
     std::cerr << "PS2 Asset Workbench - TIM2 CLI helper\n"
               << "Usage:\n"
               << "  ps2asset-texture info <input.tm2>\n"
-              << "  ps2asset-texture export <input.tm2> <picture-index> <output.ppm>\n";
+              << "  ps2asset-texture export <input.tm2> <picture-index> <output.ppm>\n"
+#ifdef PS2ASSET_HAS_PNG
+              << "  ps2asset-texture export-png <input.tm2> <picture-index> <output.png>\n"
+              << "  ps2asset-texture replace-png <input.tm2> <picture-index> <input.png> <output.tm2>\n";
+#else
+              << "  PNG commands are disabled (build with libpng development files).\n";
+#endif
 }
 
 void write_ppm(const std::string& path, const ps2asset::texture::RgbaImage& image) {
@@ -65,20 +76,65 @@ int main(int argc, char** argv) {
             return 0;
         }
 
-        if (command == "export") {
+        if (command == "export" || command == "export-png") {
             if (argc != 5) { usage(); return 2; }
             std::size_t index = 0;
             try {
-                const auto parsed = std::stoul(argv[3]);
+                const auto parsed = std::stoull(argv[3]);
+                if (parsed > static_cast<unsigned long long>(std::numeric_limits<std::size_t>::max())) {
+                    throw std::out_of_range("picture index");
+                }
                 index = static_cast<std::size_t>(parsed);
             } catch (...) {
                 throw std::runtime_error("Picture index must be a non-negative integer");
             }
             const auto image = tim2.decode_picture(index);
-            write_ppm(argv[4], image);
+            if (command == "export") {
+                write_ppm(argv[4], image);
+            } else {
+#ifdef PS2ASSET_HAS_PNG
+                if (std::filesystem::exists(std::filesystem::path(argv[4]))) {
+                    throw std::runtime_error("Output already exists; choose a new PNG path to avoid overwriting data");
+                }
+                ps2asset::image::write_png(argv[4], image);
+#else
+                throw std::runtime_error("PNG support is unavailable; rebuild with libpng development files");
+#endif
+            }
             std::cout << "Exported picture " << index << " to " << argv[4] << " (" << image.width << 'x' << image.height << ")\n";
             return 0;
         }
+
+#ifdef PS2ASSET_HAS_PNG
+        if (command == "replace-png") {
+            if (argc != 6) { usage(); return 2; }
+            std::size_t index = 0;
+            try {
+                const auto parsed = std::stoull(argv[3]);
+                if (parsed > static_cast<unsigned long long>(std::numeric_limits<std::size_t>::max())) {
+                    throw std::out_of_range("picture index");
+                }
+                index = static_cast<std::size_t>(parsed);
+            } catch (...) {
+                throw std::runtime_error("Picture index must be a non-negative integer");
+            }
+            const std::filesystem::path output_path(argv[5]);
+            if (std::filesystem::exists(output_path)) {
+                throw std::runtime_error("Output already exists; choose a new .tm2 path to avoid overwriting data");
+            }
+            auto replacement = ps2asset::image::read_png(argv[4]);
+            tim2.replace_picture_rgba8_palette(index, replacement);
+            const auto reparsed = ps2asset::texture::Tim2File::parse(tim2.bytes());
+            const auto decoded = reparsed.decode_picture(index);
+            if (!decoded.valid() || decoded.width != replacement.width || decoded.height != replacement.height) {
+                throw std::runtime_error("Post-save validation failed: replaced texture did not decode to a valid image");
+            }
+            ps2asset::texture::write_binary_file_atomic(argv[5], tim2.bytes());
+            std::cout << "Replaced picture " << index << " from " << argv[4] << " and wrote " << argv[5]
+                      << " (" << tim2.bytes().size() << " bytes); indexed palette quantization and PS2 alpha precision apply; input was not overwritten\n";
+            return 0;
+        }
+#endif
 
         usage();
         return 2;
