@@ -10,6 +10,7 @@
 #include <QStringList>
 #include <cstdint>
 #include <memory>
+#include <string>
 #include <vector>
 
 class QAction;
@@ -53,6 +54,10 @@ private:
         std::unique_ptr<ps2asset::texture::Tim2File> file;
         bool modified = false;
         bool savedAs = false;
+        // Populated only when this document was loaded from a ZIP entry.
+        QString sourceArchivePath;
+        QString sourceArchiveEntry;
+        std::string sourceArchiveEntryRaw;
     };
 
     enum ModuleRow {
@@ -89,6 +94,7 @@ private:
     void exportSelectedTexture();
     void importSelectedTexture();
     void saveSelectedTim2As();
+    void saveSelectedTextureToNewZip();
 
     void openArchiveDialog();
     void loadArchiveListing(const QString& path);
@@ -120,6 +126,7 @@ private:
     QAction* importAction_ = nullptr;
     QAction* exportAction_ = nullptr;
     QAction* saveAction_ = nullptr;
+    QAction* saveZipAction_ = nullptr;
     std::vector<TextureDocument> documents_;
     std::vector<std::uint8_t> binaryBytes_;
     std::vector<ps2asset::archive::ArchiveEntryInfo> archiveEntries_;
