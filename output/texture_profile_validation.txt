@@ -1,0 +1,23 @@
+Texture module validation — supplied dataimg.zip
+
+Archive ZIP reader: libarchive 3.7.4
+TIM2 .tm2 entries read: 61
+TIM2 entries parsed: 61
+Total pictures: 61
+Pictures with 8-bit indexed + RGBA32 CLUT replace profile: 61
+Pictures successfully decoded: 61
+Decode failures: 0
+Dimensions observed: 128x64 (61 pictures)
+Each picture: image_type=5, clut_type=3, CLUT=256 colors/1024 bytes, image payload=8192 bytes, picture header=48 bytes, mipmap_count=1, PSM=19.
+
+Validated CLI sample:
+  ./build/ps2asset-texture info /mnt/data/tv_flower_001.tm2
+Result:
+  TIM2 version=4, format_type=0, picture_count=1
+  picture 0: 128x64, 8-bit indexed, PSM=19, header=48, image=8192 bytes, CLUT=1024 bytes, mipmaps=1, import/replace=supported
+
+Automated tests (CTest):
+  header-inspection ............ PASS
+  tim2-decode-and-replace ...... PASS
+
+Caveat: this validates parser/decode/profile checks and the synthetic unit-test replacement round trip, not compatibility of an edited texture inside the game/emulator. Qt GUI source was not built in this environment because Qt Widgets development files were missing.
