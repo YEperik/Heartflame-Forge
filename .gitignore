@@ -1,3 +1,15 @@
 build/
+cmake-build-*/
 __pycache__/
 *.pyc
+*.user
+.vs/
+.idea/
+build*/
+plugins/*.dll
+plugins/*.so
+plugins/*.dylib
+*.pdb
+*.ilk
+*.exp
+*.lib
