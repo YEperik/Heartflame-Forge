@@ -1,104 +1,102 @@
-# Laporan Reverse Engineering Awal — `dataimg.zip`
+# Initial Reverse Engineering Report — `dataimg.zip`
 
-**Status:** inventarisasi, pemeriksaan signature, dan validasi header awal selesai. Decoder aset dan writer/rebuilder belum dibuat.
+**Status:** Inventory, signature inspection, and initial header validation complete. Asset decoders and writers/rebuilders have not yet been developed.
 
-## 1. Input dan integritas
+## 1. Input and Integrity
 
-| Item | Hasil pemeriksaan |
+| Item | Inspection Result |
 |---|---|
 | Input | `dataimg.zip` |
-| Ukuran ZIP | 234.323.151 byte |
-| File non-direktori | 1.300 |
-| Entri direktori | 53 |
-| Total ukuran data di dalam ZIP | 322.660.954 byte |
-| Uji integritas ZIP | Lulus; `zipfile.testzip()` mengembalikan `None` |
-| Susunan yang ada | Direktori `dataimg/` berisi aset dan `dataimg/Z.FAT` |
+| ZIP Size | 234,323,151 bytes |
+| Non-directory files | 1,300 |
+| Directory entries | 53 |
+| Total data size within ZIP | 322,660,954 bytes |
+| ZIP integrity test | Passed; `zipfile.testzip()` returned `None` |
+| Structure | Contains a `dataimg/` directory with assets and a `dataimg/Z.FAT` file |
 
-Isi ini tampak seperti **paket aset/data game**, bukan image disc PS2 lengkap. Di dalam ZIP tidak ditemukan `SYSTEM.CNF` atau executable boot game seperti `SLUS_*.ELF`/`SLES_*.ELF`; karena itu versi executable, boot path, dan perilaku runtime belum bisa diuji dari berkas ini saja.
+The contents appear to be a **game asset/data package** rather than a complete PS2 disc image. No `SYSTEM.CNF` or game boot executables (such as `SLUS_*.ELF` or `SLES_*.ELF`) were found within the ZIP; consequently, the executable version, boot path, and runtime behavior cannot be verified from this file alone.
 
-### Identifikasi judul
+### Title Identification
 
-Video `dataimg/movie/009_title.pss` memperlihatkan judul **Innocent Life: A Futuristic Harvest Moon**. Nama font `ilps2_eng_18.fnt` juga selaras dengan identifikasi tersebut. Judul mempunyai keyakinan tinggi berdasarkan aset visual; wilayah rilis dan revisi executable belum terkonfirmasi.
+The video file `dataimg/movie/009_title.pss` reveals the title: **Innocent Life: A Futuristic Harvest Moon**. The font file named `ilps2_eng_18.fnt` also aligns with this identification. The title is identified with high confidence based on visual assets; however, the release region and executable revision remain unconfirmed.
 
-Probe terhadap `009_title.pss` dengan `ffprobe` mengenali stream video MPEG-2 berukuran 512×448, frame rate `30000/1001` (≈29,97 fps), dan durasi 50,05 detik. Ini pemeriksaan metadata video, bukan validasi keseluruhan semua cutscene.
+Probing `009_title.pss` with `ffprobe` identified an MPEG-2 video stream with a resolution of 512×448, a frame rate of `30000/1001` (≈29.97 fps), and a duration of 50.05 seconds. This represents a metadata check of the video file, not a comprehensive validation of all cutscenes.
 
-## 2. Inventaris menurut ekstensi
-
-| Ekstensi | Jumlah | Catatan awal |
+## 2. Inventory by File Extension
+| Extension | Count | Initial Notes |
 |---|---:|---|
-| `.map` | 748 | Semua memiliki signature `SL01` |
-| `.atb` | 126 | Data map/scene; struktur belum didekode |
-| `.scp` | 108 | Semua memiliki signature `SL01`; kemungkinan terkait script/event berdasarkan jalur dan nama, belum di-decode |
-| `.mdl` | 85 | 76 `SL01`; 9 lainnya memakai header berbeda |
-| `.tm2` | 61 | Semua signature `TIM2`; picture count pada header = 1 |
-| `.bin` | 37 | Campuran; 7 signature `SL01` dan kelompok header numerik lain |
-| `.gim` | 33 | Semua mulai dengan `MIG.00.1PSP` |
-| `.sdl` | 29 | Semua mulai dengan `ADSC` |
-| `.sd` | 21 | Semua mulai dengan `SDPK` |
-| `.irx` | 18 | Semua mulai dengan ELF magic |
-| `.dat` | 11 | Campuran; 1 signature `SL01`, 7 signature `MN01`, lainnya berbeda |
-| `.pss` | 11 | Semua mulai dengan MPEG-PS pack start code `00 00 01 BA` |
-| `.fnt` | 4 | Semua signature `SL01` |
-| `.psi` | 2 | Struktur belum diidentifikasi |
-| `.gis` | 2 | Teks dimulai `.GIS 1.00` |
-| `.msg` | 1 | Berawalan tabel nilai little-endian; struktur belum diidentifikasi |
-| `.dir` | 1 | Daftar nama file teks berbaris |
-| `.img` | 1 | `ioprp310.img`, berisi marker `ROMDIR` pada offset 0x10 |
-| `.fat` | 1 | `Z.FAT`, dijelaskan di bagian 4 |
+| `.map` | 748 | All have the `SL01` signature |
+| `.atb` | 126 | Map/scene data; structure not yet decoded |
+| `.scp` | 108 | All have the `SL01` signature; likely related to scripts/events based on path and name; not yet decoded |
+| `.mdl` | 85 | 76 have `SL01`; the other 9 use a different header |
+| `.tm2` | 61 | All have the `TIM2` signature; picture count in header = 1 |
+| `.bin` | 37 | Mixed; 7 have the `SL01` signature, others have various numeric headers |
+| `.gim` | 33 | All begin with `MIG.00.1PSP` |
+| `.sdl` | 29 | All begin with `ADSC` |
+| `.sd` | 21 | All begin with `SDPK` |
+| `.irx` | 18 | All begin with an ELF magic number |
+| `.dat` | 11 | Mixed; 1 has the `SL01` signature, 7 have `MN01`, others differ |
+| `.pss` | 11 | All begin with the MPEG-PS pack start code `00 00 01 BA` |
+| `.fnt` | 4 | All have the `SL01` signature |
+| `.psi` | 2 | Structure not yet identified |
+| `.gis` | 2 | Text begins with `.GIS 1.00` |
+| `.msg` | 1 | Starts with a table of little-endian values; structure not yet identified |
+| `.dir` | 1 | A list of filenames in text format, one per line |
+| `.img` | 1 | `ioprp310.img`, contains the `ROMDIR` marker at offset 0x10 |
+| `.fat` | 1 | `Z.FAT`, explained in section 4 |
 
-Angka di atas merangkum semua 1.300 file non-direktori. CSV inventaris menyimpan ukuran, 16 byte awal, klasifikasi signature, serta hasil pemeriksaan `SL01` untuk setiap file.
+The figure above summarizes all 1,300 non-directory files. The inventory CSV stores the size, the initial 16 bytes, the signature classification, and the results of the `SL01` check for each file.
 
-## 3. Temuan byte yang sudah divalidasi
+## 3. Validated byte findings
 
-### Header `SL01`
+### `SL01` Header
 
-Bukti lintas sampel menunjukkan pola tetap berikut pada 944 file yang bermagic `SL01`:
+Cross-sample evidence reveals the following consistent pattern across 944 files with the `SL01` magic number:
 
-| Offset | Ukuran | Bukti / nilai | Kesimpulan | Keyakinan |
+| Offset | Size | Evidence / Value | Conclusion | Confidence |
 |---|---:|---|---|---|
-| `0x00` | 4 | ASCII `SL01` | Signature keluarga berkas | Tinggi |
-| `0x04` | 4 | Misalnya `08 39 00 00` pada `bulb1.map` → LE `0x00003908` | Makna belum ditetapkan; tidak boleh langsung disebut ukuran dekompresi/checksum | Belum diketahui |
-| `0x08` | 4 | `C6 14 00 00` pada `bulb1.map` → LE `0x14C6` = 5.318 | Nilainya sama dengan `ukuran_file - 12` | Tinggi; diuji pada 944/944 file |
-| `0x0C` | variabel | Payload/struktur khusus tipe file dimulai di sini | Byte berikutnya berbeda antarjenis; tidak aman diperlakukan sebagai field universal selain batas header 12 byte | Sedang |
+| `0x00` | 4 | ASCII `SL01` | File family signature | High |
+| `0x04` | 4 | E.g., `08 39 00 00` in `bulb1.map` → LE `0x00003908` | Meaning yet to be determined; should not be assumed to be the decompressed size or a checksum | Unknown |
+| `0x08` | 4 | `C6 14 00 00` in `bulb1.map` → LE `0x14C6` = 5,318 | Value equals `file_size - 12` | High; verified across 944/944 files |
+| `0x0C` | variable | Payload/file-type-specific structure begins here | Subsequent bytes vary by type; should not be treated as a universal field beyond the 12-byte header boundary | Medium |
 
-Contoh konkret `dataimg/common/art/bulb1.map`:
+Concrete example: `dataimg/common/art/bulb1.map`
 
-- Ukuran file: 5.330 byte.
-- Byte `0x00..0x0B`: `53 4C 30 31 08 39 00 00 C6 14 00 00`.
-- Nilai little-endian di `0x08`: `0x14C6` = 5.318 = 5.330 − 12.
-- Byte pada `0x0C` adalah `0B`; tag ASCII `FHDR` mulai pada offset `0x0D`, diikuti byte `98 00 00 00`. Ini bukti struktur bertag ada di dalam berkas, tetapi ukuran dan relasi seluruh record belum dipetakan sepenuhnya.
+- File size: 5,330 bytes.
+- Bytes `0x00..0x0B`: `53 4C 30 31 08 39 00 00 C6 14 00 00`.
+- Little-endian value at `0x08`: `0x14C6` = 5,318 = 5,330 − 12.
+- The byte at `0x0C` is `0B`; an ASCII `FHDR` tag begins at offset `0x0D`, followed by the bytes `98 00 00 00`. This confirms that a tagged structure exists within the file, though the size and relationships of all records have not yet been fully mapped.
 
-Beberapa tag empat-byte yang terlihat di sampel `.map` adalah `FHDR`, `FMAP`, `FOPT`, `FETC`, `FATB`, `FNAM`, `FMDL`, `MDHD`, `MDMT`, `MDOB`, `MDCC`, `MDST`, dan `FTEX`. Makna serta batas byte masing-masing tag tetap perlu diuji per tipe record.
+Some of the four-byte tags visible in the `.map` sample include `FHDR`, `FMAP`, `FOPT`, `FETC`, `FATB`, `FNAM`, `FMDL`, `MDHD`, `MDMT`, `MDOB`, `MDCC`, `MDST`, and `FTEX`. The specific meaning and byte boundaries for each tag still need to be verified for each record type.
 
-### Signature lain
+### Other signatures
 
-| Keluarga | Bukti | Status |
+| Family | Evidence | Status |
 |---|---|---|
-| TIM2 | 61/61 `.tm2` mulai `TIM2`; nilai u16 LE offset `0x04` = 4 dan offset `0x06` = 1 pada sampel yang diperiksa | Signature/field awal teridentifikasi; decoder gambar belum dibuat |
-| GIM | 33/33 `.gim` mulai `MIG.00.1PSP` | Signature teridentifikasi; belum diekspor ke PNG |
-| PSS | 11/11 `.pss` mulai `00 00 01 BA` | Teridentifikasi sebagai MPEG program stream; satu file title berhasil diprobe |
-| IRX | 18/18 `.irx` mulai `7F 45 4C 46` | ELF; contoh `libsd.irx` berlabel ELF32/little-endian dengan `e_machine=0x0008` |
-| SDL | 29/29 `.sdl` mulai `ADSC`, diikuti tag `SShd` pada sampel | Signature terlihat; codec/chunk layout belum divalidasi |
-| SD | 21/21 `.sd` mulai `SDPK` | Signature terlihat; internal pack belum diurai |
-| GIS | 2/2 `.gis` mulai teks `.GIS 1.00` | Header teks teridentifikasi |
+| TIM2 | 61/61 `.tm2` files start with `TIM2`; u16 LE values ​​at offset `0x04` = 4 and offset `0x06` = 1 in examined samples | Initial signature/field identified; image decoder not yet implemented |
+| GIM | 33/33 `.gim` files start with `MIG.00.1PSP` | Signature identified; not yet exported to PNG |
+| PSS | 11/11 `.pss` files start with `00 00 01 BA` | Identified as MPEG program stream; one title file successfully probed |
+| IRX | 18/18 `.irx` files start with `7F 45 4C 46` | ELF; sample `libsd.irx` is labeled as ELF32/little-endian with `e_machine=0x0008` |
+| SDL | 29/29 `.sdl` files start with `ADSC`, followed by an `SShd` tag in the samples | Signature observed; codec/chunk layout not yet validated |
+| SD | 21/21 `.sd` files start with `SDPK` | Signature observed; internal pack structure not yet parsed |
+| GIS | 2/2 `.gis` files start with the text `.GIS 1.00` | Text header identified |
 
-Signature mengidentifikasi pembungkus/keluarga awal saja; itu tidak otomatis membuktikan semua field internal atau bahwa payload dapat dibaca dengan decoder generik.
+The signature only identifies the initial wrapper/family; it does not automatically confirm all internal fields or guarantee that the payload can be read by a generic decoder.
 
-## 4. `Z.FAT`: struktur yang konsisten, semantik belum terbukti
+## 4. `Z.FAT`: consistent structure, semantics yet to be verified
 
-- Ukuran file: 15.408 byte.
-- 12 byte awal: `00 00 00 00 03 05 00 00 00 00 00 00`.
-- Word little-endian pada offset `0x04` = `0x503` = 1.283.
-- Aritmetika cocok tepat: `12 + 1.283 × 12 = 15.408`; sehingga header 12 byte diikuti 1.283 record × 12 byte adalah hipotesis struktur yang sangat kuat.
-- Record pertama pada `0x0C`: `47 6C 0A E0 1F 90 07 00 40 24 00 00`, sebagai tiga word LE `0xE00A6C47`, `0x0007901F`, `0x00002440`.
+- File size: 15,408 bytes.
+- Initial 12 bytes: `00 00 00 00 03 05 00 00 00 00 00 00`. - Little-endian word at offset `0x04` = `0x503` = 1,283.
+- The arithmetic aligns perfectly: `12 + 1,283 × 12 = 15,408`; thus, a 12-byte header followed by 1,283 records of 12 bytes each is a very strong structural hypothesis.
+- The first record at `0x0C`: `47 6C 0A E0 1F 90 07 00 40 24 00 00`, representing three little-endian (LE) words: `0xE00A6C47`, `0x0007901F`, and `0x00002440`.
 
-Kolom-kolom record belum dinamai atau dipakai untuk membangun ulang apa pun. Sebagian word ketiga cocok dengan ukuran file dalam direktori, tetapi kecocokan ukuran saja tidak membuktikan arti kolom. Jumlah record FAT juga berbeda dari jumlah file longgar yang ada pada ZIP; pemetaan satu-ke-satu belum didapat.
+The record fields have not yet been named, nor have they been used to reconstruct anything. While part of the third word matches the file size as listed in the directory, a size match alone does not confirm the meaning of the field. Furthermore, the number of FAT records differs from the number of loose files present in the ZIP archive; a one-to-one mapping has not yet been established.
 
-## 5. Implementasi yang disertakan
+## 5. Included Implementation
 
-Proyek `ps2asset-inspect` adalah alat inspeksi read-only C++17 yang dibuat dari bukti di atas. Alat ini membaca paling banyak 64 byte per file, mengenali signature awal, dan memeriksa invariant `SL01` tanpa mengubah berkas. Tidak ada decoder, serializer, atau writer/reimporter yang diklaim selesai.
+The `ps2asset-inspect` project is a read-only C++17 inspection tool developed based on the evidence above. It reads a maximum of 64 bytes per file, identifies the initial signature, and verifies the `SL01` invariant without modifying any files. There are no decoders, serializers, or writers/reimporters included or claimed to be complete.
 
-### Build dan pengujian
+### Build and Testing
 
 ```sh
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
@@ -106,29 +104,28 @@ cmake --build build --config Release
 ctest --test-dir build --output-on-failure
 ```
 
-Hasil pada lingkungan ini:
+Results in this environment:
 
 - Compiler: GCC 14.2.0.
 - CMake: 3.31.6.
-- Build C++ berhasil.
-- Unit test: 1/1 lulus.
-- Uji integritas ZIP: lulus.
-- CLI dicoba pada contoh `.map`, `.tm2`, `.irx`, dan `.pss`; keempat jenis dikenali dengan benar.
+- C++ build successful.
+- Unit tests: 1/1 passed.
+- ZIP integrity check: passed.
+- CLI tested with sample `.map`, `.tm2`, `.irx`, and `.pss` files; all four types were correctly identified.
 
-## 6. Yang belum dikerjakan / risiko
+## 6. Pending tasks / risks
 
-1. Makna field `SL01` pada `0x04` dan struktur payload belum lengkap; belum ada dekompresor berdasarkan bukti lintas sampel.
-2. Record `Z.FAT` belum dipetakan ke nama/path atau payload dengan pasti.
-3. `.atb`, bentuk `.mdl` non-`SL01`, `.scp`, `.msg`, `.psi`, `.sd`, dan `.sdl` belum diurai sampai level record/codec.
-4. Tekstur dalam file `.map` yang tertanam belum dibuktikan apakah berupa data TIM2 utuh atau record yang perlu diproses lebih dahulu.
-5. Tidak ada writer atau injeksi perubahan ke game; kompatibilitas hasil modifikasi belum diuji.
-6. Karena executable boot dan image disc lengkap tidak ada di ZIP, pengujian runtime/emulator belum dapat dilakukan hanya dengan input ini.
+1. The meaning of the `SL01` field at offset `0x04` and the payload structure remain incomplete; no decompressor has been developed yet, despite evidence gathered across multiple samples.
+2. `Z.FAT` records have not yet been definitively mapped to specific names/paths or payloads.
+3. `.atb` files, non-`SL01` `.mdl` variants, `.scp`, `.msg`, `.psi`, `.sd`, and `.sdl` files have not yet been parsed down to the record/codec level.
+4. It has not been verified whether textures embedded within `.map` files are complete TIM2 data structures or records that require further processing.
+5. No writer or mechanism for injecting modifications into the game exists; the compatibility of modified files has not been tested.
+6. As the boot executable and the complete disc image are not included in the ZIP, runtime/emulator testing cannot be performed using only these inputs.
 
-## 7. Prioritas teknis berikutnya
+## 7. Next technical priorities
 
-1. Bandingkan banyak `.map` kecil dengan tipe aset yang sama untuk merekonstruksi panjang record/tag dan menemukan batas payload.
-2. Tentukan apakah `SL01` adalah struktur resource bertag, kompresi pembungkus, atau gabungan keduanya menggunakan decoder/referensi yang dapat diuji; jangan menebak field `0x04`.
-3. Uji tabel `Z.FAT` dengan pencocokan nama, word, ukuran, dan urutan record pada semua aset yang ada.
-4. Bangun parser read-only spesifik format paling mudah dikonfirmasi terlebih dahulu (misalnya TIM2 berdiri sendiri), disertai test fixtures.
-5. Setelah read/round-trip terbukti, baru rencanakan writer untuk aset target dan uji hasilnya di game.
-
+1. Compare multiple small `.map` files containing the same asset type to reconstruct record/tag lengths and identify payload boundaries.
+2. Determine whether `SL01` is a tagged resource structure, a compression wrapper, or a combination of both, using verifiable decoders or references; do not rely on guesswork for the `0x04` field.
+3. Validate the `Z.FAT` table by cross-referencing names, words, sizes, and record sequences across all available assets.
+4. Develop a read-only parser for the format that is easiest to verify (e.g., standalone TIM2 files), including test fixtures.
+5. Once read/round-trip functionality is confirmed, proceed to design a writer for the target assets and verify the output within the game.
