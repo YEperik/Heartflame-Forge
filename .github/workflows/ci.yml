@@ -14,8 +14,12 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y cmake g++ qt6-base-dev libarchive-dev
       - name: Configure
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DPS2ASSET_BUILD_GUI=ON
-      - name: Build
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DPS2ASSET_BUILD_GUI=ON -DPS2ASSET_BUILD_SAMPLE_PLUGIN=ON
+      - name: Build all targets
         run: cmake --build build --parallel 2
-      - name: Test
+      - name: Unit tests
         run: ctest --test-dir build --output-on-failure
+      - name: GUI and extension startup smoke test
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: ./build/ps2asset-workbench --smoke-test
