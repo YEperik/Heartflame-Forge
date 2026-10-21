@@ -1,8 +1,7 @@
 #include "main_window.hpp"
-
+#include <QPluginLoader>
 #include "ps2asset/archive/zip_reader.hpp"
 #include "ps2asset/inspect.hpp"
-
 #include <QAction>
 #include <QByteArray>
 #include <QFile>
