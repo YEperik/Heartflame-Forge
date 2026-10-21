@@ -1,6 +1,6 @@
 # PS2 Asset Inspector — exploratory baseline
 
-A small, read-only C++17 utility created from the initial audit of `dataimg.zip`.
+A small, read-only C++17 utility created from the initial audit of `Innocent Life - A Futuristic Harvest Moon - Special Edition (USA)`.
 It inspects at most the first 64 bytes of each file and reports recognizable
 signatures plus a verified structural check for the current `SL01` samples. It
 does **not** decompress, decode, edit, or rebuild game assets.
