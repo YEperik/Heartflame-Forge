@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(PS2AssetWorkbench VERSION 0.4.0 LANGUAGES CXX)
+project(PS2AssetWorkbench VERSION 0.5.0 LANGUAGES CXX)
 
 include(CTest)
 include(GNUInstallDirs)
@@ -9,6 +9,7 @@ option(PS2ASSET_BUILD_CLI "Build command-line inspection and texture tools" ON)
 option(PS2ASSET_ENABLE_ARCHIVE "Enable browsing TIM2 textures inside ZIP files when libarchive is available" ON)
 option(PS2ASSET_BUILD_SAMPLE_PLUGIN "Build a sample dynamic extension when Qt is available" ON)
 option(PS2ASSET_BUILD_TOOLS "Build offline validation and maintenance tools" ON)
+option(PS2ASSET_ENABLE_PNG "Enable PNG import/export utilities when libpng is available" ON)
 
 # Core library stays independent from Qt: binary readers and format handlers
 # can be used by the GUI, CLI, tests, or another application.
@@ -48,17 +49,50 @@ if(PS2ASSET_ENABLE_ARCHIVE)
     endif()
 endif()
 
+set(PS2ASSET_PNG_AVAILABLE OFF)
+if(PS2ASSET_ENABLE_PNG)
+    find_package(PNG QUIET)
+    if(PNG_FOUND)
+        add_library(ps2asset_png src/image/png.cpp)
+        add_library(PS2AssetWorkbench::png ALIAS ps2asset_png)
+        target_include_directories(ps2asset_png
+            PUBLIC
+                $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+                $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+        )
+        target_compile_features(ps2asset_png PUBLIC cxx_std_17)
+        target_link_libraries(ps2asset_png PUBLIC PS2AssetWorkbench::core PRIVATE PNG::PNG)
+        if(MSVC)
+            target_compile_options(ps2asset_png PRIVATE /W4 /permissive-)
+        else()
+            target_compile_options(ps2asset_png PRIVATE -Wall -Wextra -Wpedantic -Wconversion -Wsign-conversion)
+        endif()
+        set(PS2ASSET_PNG_AVAILABLE ON)
+        message(STATUS "PNG import/export: enabled (libpng ${PNG_VERSION_STRING})")
+    else()
+        message(STATUS "PNG import/export CLI and PNG integration tests disabled (libpng development package not found)")
+    endif()
+endif()
+
 if(PS2ASSET_BUILD_CLI)
     add_executable(ps2asset-inspect src/main.cpp)
     target_link_libraries(ps2asset-inspect PRIVATE PS2AssetWorkbench::core)
 
     add_executable(ps2asset-texture src/texture_cli.cpp)
     target_link_libraries(ps2asset-texture PRIVATE PS2AssetWorkbench::core)
+    if(PS2ASSET_PNG_AVAILABLE)
+        target_link_libraries(ps2asset-texture PRIVATE PS2AssetWorkbench::png)
+        target_compile_definitions(ps2asset-texture PRIVATE PS2ASSET_HAS_PNG=1)
+    endif()
 endif()
 
 if(PS2ASSET_BUILD_TOOLS)
     add_executable(ps2asset-texture-validate tools/validate_textures.cpp)
     target_link_libraries(ps2asset-texture-validate PRIVATE PS2AssetWorkbench::core)
+    if(PS2ASSET_PNG_AVAILABLE)
+        target_link_libraries(ps2asset-texture-validate PRIVATE PS2AssetWorkbench::png)
+        target_compile_definitions(ps2asset-texture-validate PRIVATE PS2ASSET_HAS_PNG=1)
+    endif()
     target_compile_features(ps2asset-texture-validate PRIVATE cxx_std_17)
     set_target_properties(ps2asset-texture-validate PROPERTIES CXX_EXTENSIONS OFF)
     if(MSVC)
@@ -150,6 +184,11 @@ if(BUILD_TESTING)
     if(TARGET ps2asset-texture-validate)
         add_test(NAME texture-replacement-roundtrip-self-test COMMAND ps2asset-texture-validate --self-test)
     endif()
+    if(PS2ASSET_PNG_AVAILABLE)
+        add_executable(ps2asset-png-tests tests/test_png.cpp)
+        target_link_libraries(ps2asset-png-tests PRIVATE PS2AssetWorkbench::png)
+        add_test(NAME png-rgba-roundtrip COMMAND ps2asset-png-tests)
+    endif()
 endif()
 
 install(TARGETS ps2asset_core
@@ -166,6 +205,13 @@ if(TARGET ps2asset-texture)
 endif()
 if(TARGET ps2asset-texture-validate)
     install(TARGETS ps2asset-texture-validate RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+endif()
+if(TARGET ps2asset_png)
+    install(TARGETS ps2asset_png EXPORT PS2AssetWorkbenchTargets
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+    )
 endif()
 if(TARGET ps2asset-workbench)
     install(TARGETS ps2asset-workbench RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
