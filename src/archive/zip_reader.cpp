@@ -13,6 +13,7 @@
 #endif
 
 namespace ps2asset::archive {
+#ifdef PS2ASSET_HAS_LIBARCHIVE
 namespace {
 std::string lower_ascii(std::string text) {
     std::transform(text.begin(), text.end(), text.begin(), [](unsigned char c) {
@@ -26,6 +27,57 @@ bool has_tm2_extension(const std::string& path) {
     return lower.size() >= 4U && lower.compare(lower.size() - 4U, 4U, ".tm2") == 0;
 }
 }  // namespace
+#endif
+
+std::vector<ArchiveEntryInfo> list_zip_entries(const std::string& archive_path,
+                                                std::uint64_t max_entries) {
+#ifndef PS2ASSET_HAS_LIBARCHIVE
+    (void)archive_path;
+    (void)max_entries;
+    throw std::runtime_error("ZIP browsing is unavailable because this build was configured without libarchive");
+#else
+    if (max_entries == 0U) throw std::runtime_error("ZIP entry-list limit must be greater than zero");
+    struct ArchiveDeleter {
+        void operator()(struct archive* value) const noexcept {
+            if (value != nullptr) archive_read_free(value);
+        }
+    };
+    std::unique_ptr<struct archive, ArchiveDeleter> reader(archive_read_new());
+    if (!reader) throw std::runtime_error("libarchive could not allocate an archive-list reader");
+    archive_read_support_filter_all(reader.get());
+    archive_read_support_format_zip(reader.get());
+    if (archive_read_open_filename(reader.get(), archive_path.c_str(), 64U * 1024U) != ARCHIVE_OK) {
+        const char* error = archive_error_string(reader.get());
+        throw std::runtime_error("Cannot open ZIP archive '" + archive_path + "': " + (error ? error : "unknown error"));
+    }
+
+    std::vector<ArchiveEntryInfo> result;
+    archive_entry* entry = nullptr;
+    for (;;) {
+        const int status = archive_read_next_header(reader.get(), &entry);
+        if (status == ARCHIVE_EOF) break;
+        if (status < ARCHIVE_WARN) {
+            const char* error = archive_error_string(reader.get());
+            throw std::runtime_error("Error while reading ZIP directory: " + std::string(error ? error : "unknown error"));
+        }
+        if (result.size() >= max_entries) {
+            throw std::runtime_error("ZIP archive has more entries than the configured listing limit");
+        }
+        const char* raw_name = archive_entry_pathname_utf8(entry);
+        if (raw_name == nullptr) raw_name = archive_entry_pathname(entry);
+        const auto file_type = archive_entry_filetype(entry);
+        const auto declared_size = archive_entry_size(entry);
+        ArchiveEntryInfo info;
+        info.path = raw_name != nullptr ? raw_name : "(unnamed entry)";
+        info.is_directory = file_type == AE_IFDIR;
+        info.is_regular_file = file_type == AE_IFREG;
+        if (declared_size >= 0) info.uncompressed_size = static_cast<std::uint64_t>(declared_size);
+        result.push_back(std::move(info));
+        archive_read_data_skip(reader.get());
+    }
+    return result;
+#endif
+}
 
 bool zip_support_available() noexcept {
 #ifdef PS2ASSET_HAS_LIBARCHIVE
