@@ -11,6 +11,18 @@ struct ArchivedTexture {
     std::vector<std::uint8_t> bytes;
 };
 
+struct ArchiveEntryInfo {
+    std::string path;
+    std::uint64_t uncompressed_size = 0;
+    bool is_directory = false;
+    bool is_regular_file = false;
+};
+
+// Lists archive metadata only. No entry payload is extracted or modified.
+[[nodiscard]] std::vector<ArchiveEntryInfo> list_zip_entries(
+    const std::string& archive_path,
+    std::uint64_t max_entries = 200000ULL);
+
 [[nodiscard]] bool zip_support_available() noexcept;
 [[nodiscard]] std::vector<ArchivedTexture> read_tim2_entries_from_zip(
     const std::string& archive_path,
