@@ -1,3 +1,7 @@
+#pragma once
+#include <vector>
+#include <memory>
+#include <QPluginLoader>
 #include "ps2asset/workbench/plugin_interface.hpp"
 #include <QPluginLoader>
 #include <QLabel>
