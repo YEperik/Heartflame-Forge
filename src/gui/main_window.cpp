@@ -1,7 +1,8 @@
 #include "main_window.hpp"
-#include <QPluginLoader>
+
 #include "ps2asset/archive/zip_reader.hpp"
 #include "ps2asset/inspect.hpp"
+
 #include <QAction>
 #include <QByteArray>
 #include <QFile>
@@ -168,6 +169,10 @@ void MainWindow::buildUi() {
     exportAction_->setToolTip(QStringLiteral("Ekspor tekstur terpilih sebagai PNG"));
     saveAction_ = new QAction(QStringLiteral("Simpan TM2 sebagai…"), this);
     saveAction_->setToolTip(QStringLiteral("Simpan TIM2 hasil edit sebagai file baru"));
+    saveZipAction_ = new QAction(QStringLiteral("Simpan semua tekstur berubah ke ZIP baru…"), this);
+    saveZipAction_->setObjectName(QStringLiteral("saveZipAction"));
+    saveZipAction_->setToolTip(QStringLiteral("Mengganti semua entry tekstur yang telah diedit dari arsip ini, lalu menyimpan ZIP baru; arsip sumber tidak diubah"));
+    saveZipAction_->setEnabled(false);
 
     auto* fileMenu = menuBar()->addMenu(QStringLiteral("Berkas"));
     fileMenu->addAction(openAction);
@@ -178,6 +183,7 @@ void MainWindow::buildUi() {
     editMenu->addAction(importAction_);
     editMenu->addAction(exportAction_);
     editMenu->addAction(saveAction_);
+    editMenu->addAction(saveZipAction_);
     auto* viewMenu = menuBar()->addMenu(QStringLiteral("Tampilan"));
     auto* homeAction = viewMenu->addAction(QStringLiteral("Ikhtisar / Dashboard"));
     auto* texturesAction = viewMenu->addAction(QStringLiteral("Texture Workshop"));
@@ -194,6 +200,7 @@ void MainWindow::buildUi() {
     toolbar->addAction(importAction_);
     toolbar->addAction(exportAction_);
     toolbar->addAction(saveAction_);
+    toolbar->addAction(saveZipAction_);
     toolbar->addSeparator();
     toolbar->addAction(inspectAction);
 
@@ -203,13 +210,14 @@ void MainWindow::buildUi() {
     connect(importAction_, &QAction::triggered, this, [this]() { importSelectedTexture(); });
     connect(exportAction_, &QAction::triggered, this, [this]() { exportSelectedTexture(); });
     connect(saveAction_, &QAction::triggered, this, [this]() { saveSelectedTim2As(); });
+    connect(saveZipAction_, &QAction::triggered, this, [this]() { saveSelectedTextureToNewZip(); });
     connect(homeAction, &QAction::triggered, this, [this]() { selectModule(DashboardModule); });
     connect(texturesAction, &QAction::triggered, this, [this]() { selectModule(TextureModule); });
     connect(archiveAction, &QAction::triggered, this, [this]() { selectModule(ArchiveModule); });
     connect(binaryAction, &QAction::triggered, this, [this]() { selectModule(BinaryModule); });
     connect(aboutAction, &QAction::triggered, this, [this]() {
         QMessageBox::about(this, QStringLiteral("Tentang PS2 Asset Workbench"),
-            QStringLiteral("<b>PS2 Asset Workbench 0.6.0</b><br>Desktop workbench C++17/CMake untuk eksplorasi aset game PS2.<br><br>Modul tersedia: Texture Workshop, Archive Texture Browser, Binary Inspector, ZIP entry repacking melalui CLI, serta API extension dinamis.<br>Import TIM2 saat ini dibatasi pada profil indexed 8-bit + CLUT RGBA32 yang telah divalidasi dari sampel.<br><br>Modul model, audio, dan script ditampilkan sebagai ruang kerja lanjutan; decoder untuk format tersebut belum diimplementasikan."));
+            QStringLiteral("<b>PS2 Asset Workbench 0.8.0</b><br>Desktop workbench C++17/CMake untuk eksplorasi aset game PS2.<br><br>Modul tersedia: Texture Workshop, Archive Browser dengan ekspor ZIP hasil edit, Binary Inspector, CLI, serta API extension dinamis.<br>Import TIM2 saat ini dibatasi pada profil indexed 8-bit + CLUT RGBA32 yang telah divalidasi dari sampel.<br><br>Modul model, audio, dan script ditampilkan sebagai ruang kerja lanjutan; decoder untuk format tersebut belum diimplementasikan."));
     });
 
     auto* root = new QWidget(this);
@@ -291,6 +299,7 @@ void MainWindow::buildUi() {
             importAction_->setEnabled(false);
             exportAction_->setEnabled(false);
             saveAction_->setEnabled(false);
+            saveZipAction_->setEnabled(false);
         } else if (textureList_ != nullptr) {
             selectionChanged(textureList_->currentItem());
         }
@@ -427,7 +436,7 @@ QWidget* MainWindow::buildTexturePage() {
     splitter->setSizes({350, 900});
     rootLayout->addWidget(splitter, 1);
 
-    auto* footnote = new QLabel(QStringLiteral("Import yang dapat ditulis saat ini: TIM2 indexed 8-bit + CLUT RGBA32, 256 warna, satu mip level, header gambar 48 byte. ZIP dibuka untuk menelusuri dan mengekspor; hasil modifikasi dari ZIP disimpan menjadi .tm2 terpisah, bukan menulis ulang arsip."), root);
+    auto* footnote = new QLabel(QStringLiteral("Import yang dapat ditulis saat ini: TIM2 indexed 8-bit + CLUT RGBA32, 256 warna, satu mip level, header gambar 48 byte. Untuk tekstur yang berasal dari ZIP, gunakan 'Simpan semua tekstur berubah ke ZIP baru…'; semua TIM2 yang diubah dalam arsip sesi ini dikemas sekaligus dan sumber tidak ditimpa."), root);
     footnote->setWordWrap(true);
     footnote->setStyleSheet(QStringLiteral("color: #657285; font-size: 11px; padding: 3px;"));
     rootLayout->addWidget(footnote);
@@ -441,7 +450,7 @@ QWidget* MainWindow::buildArchiveBrowserPage() {
     layout->setSpacing(12);
     auto* heading = new QLabel(QStringLiteral("Archive Browser"), page);
     heading->setStyleSheet(QStringLiteral("font-size: 23px; font-weight: 700; color: #233246;"));
-    auto* intro = new QLabel(QStringLiteral("Baca metadata entri ZIP secara read-only. Tidak ada ekstraksi otomatis untuk semua file; pilih file TIM2 untuk membuka arsip pada Texture Workshop."), page);
+    auto* intro = new QLabel(QStringLiteral("Baca metadata ZIP tanpa mengekstrak seluruh arsip. Pilih file TIM2 untuk membuka di Texture Workshop; setelah mengganti tekstur, simpan perubahan sebagai ZIP baru dari menu Tekstur."), page);
     intro->setWordWrap(true);
     intro->setStyleSheet(QStringLiteral("color: #667487;"));
     auto* controls = new QHBoxLayout();
@@ -685,6 +694,9 @@ void MainWindow::openZip(const QString& path) {
         try {
             TextureDocument doc;
             doc.name = QString::fromUtf8(entry.entry_name.c_str());
+            doc.sourceArchivePath = QFileInfo(path).absoluteFilePath();
+            doc.sourceArchiveEntry = doc.name;
+            doc.sourceArchiveEntryRaw = entry.entry_name;
             doc.file = std::make_unique<ps2asset::texture::Tim2File>(
                 ps2asset::texture::Tim2File::parse(std::move(entry.bytes)));
             loaded.push_back(std::move(doc));
@@ -769,6 +781,7 @@ void MainWindow::updateSelection(int documentIndex, int pictureIndex) {
     importAction_->setEnabled(false);
     exportAction_->setEnabled(false);
     saveAction_->setEnabled(validSelection);
+    saveZipAction_->setEnabled(false);
     if (!validSelection) {
         preview_->setMessage(QStringLiteral("Pilih tekstur untuk melihat pratinjau"));
         details_->setText(QStringLiteral("Detail tekstur akan ditampilkan di sini."));
@@ -777,6 +790,12 @@ void MainWindow::updateSelection(int documentIndex, int pictureIndex) {
 
     const auto& doc = documents_[static_cast<std::size_t>(selectedDocument_)];
     const auto& pic = doc.file->pictures()[static_cast<std::size_t>(selectedPicture_)];
+    const bool hasModifiedEntryFromArchive = !doc.sourceArchivePath.isEmpty() &&
+        std::any_of(documents_.begin(), documents_.end(), [&](const TextureDocument& candidate) {
+            return candidate.modified && candidate.sourceArchivePath == doc.sourceArchivePath &&
+                   !candidate.sourceArchiveEntryRaw.empty();
+        });
+    saveZipAction_->setEnabled(hasModifiedEntryFromArchive);
     QString info = QStringLiteral("File: %1\nGambar: %2 dari %3\nDimensi: %4 × %5 px\nFormat: %6 | PSM: %7 | Mipmap: %8\nData gambar: %9 byte | CLUT: %10 byte (%11 warna)\nImport/ganti: %12 | Status: %13")
         .arg(doc.name).arg(selectedPicture_ + 1).arg(doc.file->picture_count())
         .arg(pic.width).arg(pic.height).arg(QString::fromStdString(pic.image_type_name()))
@@ -848,7 +867,7 @@ void MainWindow::importSelectedTexture() {
     if (image.size() != QSize(pic.width, pic.height)) {
         const auto answer = QMessageBox::question(this, QStringLiteral("Sesuaikan dimensi?"),
             QStringLiteral("Gambar berukuran %1×%2, sedangkan target adalah %3×%4.\n\nSkalakan otomatis ke ukuran tekstur?")
-                .arg(image.width()).arg(image.height()).arg(pic.width).arg(pic.height),
+                .arg(image.width()).arg(image.height()).arg(pic.width).arg(pic.height()),
             QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes);
         if (answer != QMessageBox::Yes) return;
         image = image.scaled(QSize(pic.width, pic.height), Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
@@ -903,6 +922,102 @@ void MainWindow::saveSelectedTim2As() {
     updateSelection(selectedDocument_, selectedPicture_);
     appendLog(QStringLiteral("[Texture] Saved modified TIM2 as %1 (%2 bytes)").arg(path).arg(static_cast<qulonglong>(bytes.size())));
     statusBar()->showMessage(QStringLiteral("TIM2 tersimpan: %1 (%2 byte). Sumber asli tidak diubah.").arg(path).arg(static_cast<qulonglong>(bytes.size())), 7000);
+}
+
+void MainWindow::saveSelectedTextureToNewZip() {
+    if (!hasSelection()) return;
+    const auto& selected = documents_[static_cast<std::size_t>(selectedDocument_)];
+    if (selected.sourceArchivePath.isEmpty() || selected.sourceArchiveEntry.isEmpty()) {
+        QMessageBox::information(this, QStringLiteral("Sumber ZIP tidak tersedia"),
+            QStringLiteral("Tekstur ini tidak dibuka dari entry ZIP. Buka arsip melalui Archive Browser atau Texture Workshop terlebih dahulu."));
+        return;
+    }
+    if (!ps2asset::archive::zip_support_available()) {
+        QMessageBox::critical(this, QStringLiteral("ZIP tidak tersedia"),
+            QStringLiteral("Build ini tidak memiliki dukungan libarchive. Pasang libarchive development package dan build ulang."));
+        return;
+    }
+
+    std::vector<std::size_t> modifiedDocumentIndices;
+    std::vector<ps2asset::archive::ZipEntryReplacement> replacements;
+    for (std::size_t i = 0; i < documents_.size(); ++i) {
+        const auto& candidate = documents_[i];
+        if (!candidate.modified || candidate.sourceArchivePath != selected.sourceArchivePath ||
+            candidate.sourceArchiveEntryRaw.empty() || !candidate.file) continue;
+        // Validate each edited container before starting the archive rebuild.
+        try {
+            (void)ps2asset::texture::Tim2File::parse(candidate.file->bytes());
+        } catch (const std::exception& error) {
+            QMessageBox::critical(this, QStringLiteral("TIM2 tidak valid"),
+                QStringLiteral("Tekstur %1 gagal divalidasi:\n%2").arg(candidate.name, safeExceptionText(error)));
+            appendLog(QStringLiteral("[Archive] Batch pre-validation failed for %1: %2")
+                .arg(candidate.name, safeExceptionText(error)));
+            return;
+        }
+        replacements.push_back({candidate.sourceArchiveEntryRaw, candidate.file->bytes()});
+        modifiedDocumentIndices.push_back(i);
+    }
+    if (replacements.empty()) {
+        QMessageBox::information(this, QStringLiteral("Belum ada perubahan"),
+            QStringLiteral("Ganti setidaknya satu tekstur terlebih dahulu sebelum membuat ZIP hasil modifikasi."));
+        return;
+    }
+
+    const QFileInfo sourceInfo(selected.sourceArchivePath);
+    const QString suggested = sourceInfo.absolutePath() + QLatin1Char('/') +
+        sourceInfo.completeBaseName() + QStringLiteral("_modded.zip");
+    QString outputPath = QFileDialog::getSaveFileName(this, QStringLiteral("Simpan tekstur yang diubah ke ZIP baru"),
+        suggested, QStringLiteral("ZIP archive (*.zip)"));
+    if (outputPath.isEmpty()) return;
+    if (!outputPath.endsWith(QStringLiteral(".zip"), Qt::CaseInsensitive)) outputPath += QStringLiteral(".zip");
+
+    const QString sourceCanonical = QFileInfo(selected.sourceArchivePath).canonicalFilePath();
+    const QString outputAbsolute = QFileInfo(outputPath).absoluteFilePath();
+    const QString outputCanonical = QFileInfo(outputPath).canonicalFilePath();
+    if ((!sourceCanonical.isEmpty() && outputCanonical == sourceCanonical) ||
+        outputAbsolute == QFileInfo(selected.sourceArchivePath).absoluteFilePath()) {
+        QMessageBox::critical(this, QStringLiteral("Arsip sumber dilindungi"),
+            QStringLiteral("Pilih nama/path lain. Arsip sumber tidak boleh menjadi file tujuan."));
+        return;
+    }
+    if (QFileInfo::exists(outputPath)) {
+        QMessageBox::warning(this, QStringLiteral("File tujuan sudah ada"),
+            QStringLiteral("File tujuan sudah ada. Untuk mencegah kehilangan data, pilih nama ZIP baru yang belum digunakan."));
+        return;
+    }
+
+    bool outputCreated = false;
+    try {
+        ps2asset::archive::replace_zip_entries_bytes(selected.sourceArchivePath.toStdString(), replacements,
+                                                       outputPath.toStdString());
+        outputCreated = true;
+
+        // Confirm every edited entry survives in the new archive before reporting success.
+        const auto outputEntries = ps2asset::archive::list_zip_entries(outputPath.toStdString());
+        for (const auto& replacement : replacements) {
+            const auto target = std::find_if(outputEntries.begin(), outputEntries.end(), [&](const auto& entry) {
+                return entry.path == replacement.entry_path && entry.is_regular_file;
+            });
+            if (target == outputEntries.end()) {
+                throw std::runtime_error("Verifikasi output gagal: entry tidak ditemukan pada ZIP yang ditulis: " + replacement.entry_path);
+            }
+        }
+
+        for (const auto index : modifiedDocumentIndices) documents_[index].savedAs = true;
+        updateDashboardSummary();
+        updateSelection(selectedDocument_, selectedPicture_);
+        appendLog(QStringLiteral("[Archive] Replaced %1 edited texture entries in new ZIP %2; source preserved")
+            .arg(static_cast<qulonglong>(replacements.size())).arg(outputPath));
+        statusBar()->showMessage(QStringLiteral("ZIP baru tersimpan: %1 (%2 tekstur diganti)")
+            .arg(outputPath).arg(static_cast<qulonglong>(replacements.size())), 8000);
+        QMessageBox::information(this, QStringLiteral("ZIP berhasil dibuat"),
+            QStringLiteral("%1 entry tekstur yang diedit telah diganti dalam arsip baru.\n\nOutput:\n%2\n\nArsip sumber tidak diubah.")
+                .arg(static_cast<qulonglong>(replacements.size())).arg(outputPath));
+    } catch (const std::exception& error) {
+        if (outputCreated) QFile::remove(outputPath);
+        QMessageBox::critical(this, QStringLiteral("Gagal membuat ZIP modifikasi"), safeExceptionText(error));
+        appendLog(QStringLiteral("[Archive] Batch repack failed: %1").arg(safeExceptionText(error)));
+    }
 }
 
 void MainWindow::openArchiveDialog() {
