@@ -3,6 +3,12 @@
 #include "ps2asset/archive/zip_reader.hpp"
 #include "ps2asset/inspect.hpp"
 #include "ps2asset/model/inspect.hpp"
+#include "ps2asset/workbench/module_catalog.hpp"
+#include "modules/audio_page.hpp"
+#include "modules/video_page.hpp"
+#include "modules/animation_page.hpp"
+#include "modules/text_page.hpp"
+#include "modules/model_export_page.hpp"
 
 #include <QAction>
 #include <QByteArray>
@@ -152,7 +158,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
 }
 
 void MainWindow::buildUi() {
-    setWindowTitle(QStringLiteral("PS2 Asset Workbench  |  Asset Lab"));
+    setWindowTitle(QStringLiteral("PS2 Asset Workbench 1.1.0  |  Modular Asset Lab"));
     setWindowIcon(style()->standardIcon(QStyle::SP_ComputerIcon));
     resize(1440, 900);
     setMinimumSize(1080, 680);
@@ -218,7 +224,7 @@ void MainWindow::buildUi() {
     connect(binaryAction, &QAction::triggered, this, [this]() { selectModule(BinaryModule); });
     connect(aboutAction, &QAction::triggered, this, [this]() {
         QMessageBox::about(this, QStringLiteral("Tentang PS2 Asset Workbench"),
-            QStringLiteral("<b>PS2 Asset Workbench 1.0.0</b><br>Desktop workbench C++17/CMake untuk eksplorasi aset game PS2.<br><br>Modul tersedia: Texture Workshop, Archive Browser dengan batch ZIP replacement, Binary Inspector, dan profiler read-only kandidat model .mdl.<br>Import TIM2 dibatasi pada profil indexed 8-bit + CLUT RGBA32 yang telah divalidasi dari sampel.<br><br>Profiler MDL melaporkan marker byte, kandidat string path, serta rentang SL01 yang lolos pemeriksaan batas. CLI terpisah dapat mengekstrak rentang tersebut dengan manifest; mesh, material, skeleton, dan animasi belum didekode."));
+            QStringLiteral("<b>PS2 Asset Workbench 1.1.0</b><br>Desktop workbench modular C++17/CMake untuk eksplorasi aset game PS2.<br><br>Workspace terpisah: Texture, Archive, Binary, Model Inspector, Model Export GLB (Assimp opsional), Animation, Audio, Video/Stream, dan Text/Script.<br>Parser inti tetap terpisah dari GUI dan plugin Qt dapat menambahkan halaman baru.<br><br>Catatan: mesh/animasi custom .mdl, codec proprietary SDPK/ADSC, dan decoder PSS belum diimplementasikan. Setiap halaman menandai fitur yang hanya berupa riset."));
     });
 
     auto* root = new QWidget(this);
@@ -244,13 +250,24 @@ void MainWindow::buildUi() {
     moduleList_->setObjectName(QStringLiteral("moduleNavigation"));
     moduleList_->setFrameShape(QFrame::NoFrame);
     moduleList_->setSpacing(1);
-    moduleList_->addItem(new QListWidgetItem(style()->standardIcon(QStyle::SP_DesktopIcon), QStringLiteral("Ikhtisar")));
-    moduleList_->addItem(new QListWidgetItem(style()->standardIcon(QStyle::SP_FileDialogContentsView), QStringLiteral("Texture Workshop")));
-    moduleList_->addItem(new QListWidgetItem(style()->standardIcon(QStyle::SP_DirOpenIcon), QStringLiteral("Archive Browser")));
-    moduleList_->addItem(new QListWidgetItem(style()->standardIcon(QStyle::SP_FileDialogListView), QStringLiteral("Binary Inspector")));
-    moduleList_->addItem(new QListWidgetItem(style()->standardIcon(QStyle::SP_DesktopIcon), QStringLiteral("3D Model & Animasi")));
-    moduleList_->addItem(new QListWidgetItem(style()->standardIcon(QStyle::SP_MediaVolume), QStringLiteral("Audio & Video")));
-    moduleList_->addItem(new QListWidgetItem(style()->standardIcon(QStyle::SP_FileIcon), QStringLiteral("Script & Teks")));
+    const auto& moduleDescriptors = ps2asset::workbench::builtin_modules();
+    for (const auto& descriptor : moduleDescriptors) {
+        QStyle::StandardPixmap pixmap = QStyle::SP_FileIcon;
+        if (descriptor.id == "dashboard") pixmap = QStyle::SP_DesktopIcon;
+        else if (descriptor.id == "texture") pixmap = QStyle::SP_FileDialogContentsView;
+        else if (descriptor.id == "archive") pixmap = QStyle::SP_DirOpenIcon;
+        else if (descriptor.id == "binary") pixmap = QStyle::SP_FileDialogListView;
+        else if (descriptor.id == "model-inspector") pixmap = QStyle::SP_ComputerIcon;
+        else if (descriptor.id == "model-export-glb") pixmap = QStyle::SP_DialogSaveButton;
+        else if (descriptor.id == "animation") pixmap = QStyle::SP_DesktopIcon;
+        else if (descriptor.id == "audio") pixmap = QStyle::SP_MediaVolume;
+        else if (descriptor.id == "video") pixmap = QStyle::SP_MediaPlay;
+        auto* item = new QListWidgetItem(style()->standardIcon(pixmap), QString::fromStdString(descriptor.display_name));
+        item->setData(Qt::UserRole, QString::fromStdString(descriptor.id));
+        item->setToolTip(QString::fromStdString(descriptor.summary + "\nStatus: " +
+            ps2asset::workbench::readiness_name(descriptor.readiness)));
+        moduleList_->addItem(item);
+    }
     sidebarLayout->addWidget(moduleList_, 1);
     auto* sidebarFooter = new QLabel(QStringLiteral("C++17  •  CMake\nPlugin API v1.0"), sidebar);
     sidebarFooter->setStyleSheet(QStringLiteral("color: #9fb0c4; font-size: 10px; padding: 8px;"));
@@ -265,14 +282,11 @@ void MainWindow::buildUi() {
     moduleStack_->addWidget(buildArchiveBrowserPage());
     moduleStack_->addWidget(buildBinaryInspectorPage());
     moduleStack_->addWidget(buildModelInspectorPage());
-    moduleStack_->addWidget(buildPlaceholderPage(
-        QStringLiteral("Audio & Video"),
-        QStringLiteral("Workspace untuk inventaris stream, metadata audio, dan cutscene. Identifikasi signature dasar tersedia pada Binary Inspector; decoding penuh belum diaktifkan."),
-        QStringList() << QStringLiteral("Deteksi format container dan codec") << QStringLiteral("Ekspor audio ke WAV setelah codec terverifikasi") << QStringLiteral("Informasi stream PSS dan validasi batas blok")));
-    moduleStack_->addWidget(buildPlaceholderPage(
-        QStringLiteral("Script & Teks"),
-        QStringLiteral("Workspace untuk mencari tabel string, pesan UI, script, dan data event setelah struktur file berhasil dipetakan."),
-        QStringList() << QStringLiteral("Pencarian teks ASCII / UTF-16") << QStringLiteral("Ekspor dan import tabel teks dengan encoding terjaga") << QStringLiteral("Validasi panjang, terminator, dan offset sebelum rebuild")));
+    moduleStack_->addWidget(new ps2asset::gui::ModelExportPage(moduleStack_));
+    moduleStack_->addWidget(new ps2asset::gui::AnimationPage(moduleStack_));
+    moduleStack_->addWidget(new ps2asset::gui::AudioPage(moduleStack_));
+    moduleStack_->addWidget(new ps2asset::gui::VideoPage(moduleStack_));
+    moduleStack_->addWidget(new ps2asset::gui::TextPage(moduleStack_));
     rootLayout->addWidget(moduleStack_, 1);
     setCentralWidget(root);
 
@@ -372,230 +386,12 @@ QWidget* MainWindow::buildDashboardPage() {
         QStringLiteral("Jelajahi arsip ZIP"), [this]() { selectModule(ArchiveModule); openArchiveDialog(); }), 1, 1);
     layout->addLayout(cards);
 
-    auto* disclaimer = new QLabel(QStringLiteral("Catatan engineering: modul model, audio, dan script adalah workspace yang disiapkan untuk dikembangkan; bukan decoder yang sudah selesai. Semua asumsi format harus divalidasi terhadap bytes dan pengujian round-trip sebelum dipakai untuk memodifikasi aset game."), page);
+    auto* disclaimer = new QLabel(QStringLiteral("Catatan engineering: workspace Model, Animation, Audio, Video, dan Text sudah dipisah per fitur. Beberapa masih read-only atau menunggu riset format; tidak ada decoder otomatis untuk format proprietary hanya berdasarkan signature."), page);
     disclaimer->setWordWrap(true);
     disclaimer->setStyleSheet(QStringLiteral("color: #657285; padding: 8px 2px;"));
     layout->addWidget(disclaimer);
     layout->addStretch(1);
     updateDashboardSummary();
-    return page;
-}
-
-QWidget* MainWindow::buildTexturePage() {
-    auto* root = new QWidget(this);
-    auto* rootLayout = new QVBoxLayout(root);
-    rootLayout->setContentsMargins(18, 16, 18, 14);
-    rootLayout->setSpacing(10);
-
-    auto* heading = new QLabel(QStringLiteral("Texture Workshop"), root);
-    heading->setStyleSheet(QStringLiteral("font-size: 22px; font-weight: 700; color: #233246;"));
-    auto* subtitle = new QLabel(QStringLiteral("TIM2 texture preview, PNG export, image replacement, and safe save-as workflow"), root);
-    subtitle->setStyleSheet(QStringLiteral("color: #667487;"));
-    rootLayout->addWidget(heading);
-    rootLayout->addWidget(subtitle);
-
-    sourceLabel_ = new QLabel(QStringLiteral("Sumber: belum ada file dibuka"), root);
-    sourceLabel_->setTextInteractionFlags(Qt::TextSelectableByMouse);
-    sourceLabel_->setStyleSheet(QStringLiteral("color: #4c5968; background: white; border: 1px solid #dfe5ed; border-radius: 5px; padding: 8px;"));
-    rootLayout->addWidget(sourceLabel_);
-
-    auto* splitter = new QSplitter(Qt::Horizontal, root);
-    textureList_ = new QListWidget(splitter);
-    textureList_->setObjectName(QStringLiteral("textureList"));
-    textureList_->setMinimumWidth(280);
-    textureList_->setMaximumWidth(470);
-    textureList_->setSelectionMode(QAbstractItemView::SingleSelection);
-    textureList_->setUniformItemSizes(false);
-    textureList_->setAlternatingRowColors(true);
-    textureList_->setStyleSheet(QStringLiteral("QListWidget { background: white; border: 1px solid #dfe5ed; border-radius: 5px; padding: 3px; } QListWidget::item { padding: 7px; }"));
-    connect(textureList_, &QListWidget::currentItemChanged, this,
-            [this](QListWidgetItem* current, QListWidgetItem*) { selectionChanged(current); });
-
-    auto* right = new QWidget(splitter);
-    auto* rightLayout = new QVBoxLayout(right);
-    rightLayout->setContentsMargins(0, 0, 0, 0);
-    rightLayout->setSpacing(10);
-    preview_ = new ImagePreview(right);
-    preview_->setObjectName(QStringLiteral("texturePreview"));
-    preview_->setStyleSheet(QStringLiteral("border: 1px solid #c8cdd3; border-radius: 6px;"));
-    rightLayout->addWidget(preview_, 1);
-    details_ = new QLabel(QStringLiteral("Detail tekstur akan ditampilkan di sini."), right);
-    details_->setTextFormat(Qt::PlainText);
-    details_->setTextInteractionFlags(Qt::TextSelectableByMouse);
-    details_->setWordWrap(true);
-    details_->setMinimumHeight(106);
-    details_->setStyleSheet(QStringLiteral("background: white; border: 1px solid #d7dce1; border-radius: 5px; padding: 10px; color: #28313b;"));
-    rightLayout->addWidget(details_);
-
-    splitter->addWidget(textureList_);
-    splitter->addWidget(right);
-    splitter->setStretchFactor(0, 0);
-    splitter->setStretchFactor(1, 1);
-    splitter->setSizes({350, 900});
-    rootLayout->addWidget(splitter, 1);
-
-    auto* footnote = new QLabel(QStringLiteral("Import yang dapat ditulis saat ini: TIM2 indexed 8-bit + CLUT RGBA32, 256 warna, satu mip level, header gambar 48 byte. Untuk tekstur yang berasal dari ZIP, gunakan 'Simpan semua tekstur berubah ke ZIP baru…'; semua TIM2 yang diubah dalam arsip sesi ini dikemas sekaligus dan sumber tidak ditimpa."), root);
-    footnote->setWordWrap(true);
-    footnote->setStyleSheet(QStringLiteral("color: #657285; font-size: 11px; padding: 3px;"));
-    rootLayout->addWidget(footnote);
-    return root;
-}
-
-QWidget* MainWindow::buildArchiveBrowserPage() {
-    auto* page = new QWidget(this);
-    auto* layout = new QVBoxLayout(page);
-    layout->setContentsMargins(24, 22, 24, 20);
-    layout->setSpacing(12);
-    auto* heading = new QLabel(QStringLiteral("Archive Browser"), page);
-    heading->setStyleSheet(QStringLiteral("font-size: 23px; font-weight: 700; color: #233246;"));
-    auto* intro = new QLabel(QStringLiteral("Baca metadata ZIP tanpa mengekstrak seluruh arsip. Pilih file TIM2 untuk membuka di Texture Workshop; setelah mengganti tekstur, simpan perubahan sebagai ZIP baru dari menu Tekstur."), page);
-    intro->setWordWrap(true);
-    intro->setStyleSheet(QStringLiteral("color: #667487;"));
-    auto* controls = new QHBoxLayout();
-    auto* openButton = new QPushButton(QStringLiteral("Buka arsip ZIP…"), page);
-    openButton->setMinimumHeight(36);
-    connect(openButton, &QPushButton::clicked, this, [this]() { openArchiveDialog(); });
-    archiveFilter_ = new QLineEdit(page);
-    archiveFilter_->setPlaceholderText(QStringLiteral("Filter nama/path entri…"));
-    connect(archiveFilter_, &QLineEdit::textChanged, this, [this](const QString&) { filterArchiveEntries(); });
-    auto* openTextureButton = new QPushButton(QStringLiteral("Buka entri TIM2"), page);
-    connect(openTextureButton, &QPushButton::clicked, this, [this]() { openSelectedArchiveTexture(); });
-    controls->addWidget(openButton);
-    controls->addWidget(archiveFilter_, 1);
-    controls->addWidget(openTextureButton);
-    archiveSummary_ = new QLabel(QStringLiteral("Belum ada arsip dibuka."), page);
-    archiveSummary_->setTextInteractionFlags(Qt::TextSelectableByMouse);
-    archiveSummary_->setStyleSheet(QStringLiteral("background: white; border: 1px solid #dfe5ed; border-radius: 5px; padding: 8px; color: #344256;"));
-
-    archiveTable_ = new QTableWidget(page);
-    archiveTable_->setObjectName(QStringLiteral("archiveEntryTable"));
-    archiveTable_->setColumnCount(3);
-    archiveTable_->setHorizontalHeaderLabels(QStringList() << QStringLiteral("Nama / Path") << QStringLiteral("Tipe") << QStringLiteral("Ukuran (byte)"));
-    archiveTable_->setSelectionBehavior(QAbstractItemView::SelectRows);
-    archiveTable_->setSelectionMode(QAbstractItemView::SingleSelection);
-    archiveTable_->setEditTriggers(QAbstractItemView::NoEditTriggers);
-    archiveTable_->setAlternatingRowColors(true);
-    archiveTable_->setSortingEnabled(false);
-    archiveTable_->verticalHeader()->setVisible(false);
-    archiveTable_->horizontalHeader()->setStretchLastSection(false);
-    archiveTable_->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
-    archiveTable_->horizontalHeader()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
-    archiveTable_->horizontalHeader()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
-    connect(archiveTable_, &QTableWidget::cellDoubleClicked, this, [this](int, int) { openSelectedArchiveTexture(); });
-
-    layout->addWidget(heading);
-    layout->addWidget(intro);
-    layout->addLayout(controls);
-    layout->addWidget(archiveSummary_);
-    layout->addWidget(archiveTable_, 1);
-    return page;
-}
-
-QWidget* MainWindow::buildBinaryInspectorPage() {
-    auto* page = new QWidget(this);
-    auto* layout = new QVBoxLayout(page);
-    layout->setContentsMargins(24, 22, 24, 20);
-    layout->setSpacing(12);
-    auto* heading = new QLabel(QStringLiteral("Binary Inspector"), page);
-    heading->setStyleSheet(QStringLiteral("font-size: 23px; font-weight: 700; color: #233246;"));
-    auto* intro = new QLabel(QStringLiteral("Inspeksi read-only. Tidak ada byte yang diubah. Ukuran file dibatasi 64 MiB; hex preview menampilkan maksimum 8 KiB pertama."), page);
-    intro->setWordWrap(true);
-    intro->setStyleSheet(QStringLiteral("color: #667487;"));
-    auto* openButton = new QPushButton(QStringLiteral("Pilih berkas binary…"), page);
-    openButton->setMinimumHeight(36);
-    connect(openButton, &QPushButton::clicked, this, [this]() { inspectBinaryDialog(); });
-    binaryInfo_ = new QLabel(QStringLiteral("Belum ada berkas dipilih."), page);
-    binaryInfo_->setWordWrap(true);
-    binaryInfo_->setTextInteractionFlags(Qt::TextSelectableByMouse);
-    binaryInfo_->setStyleSheet(QStringLiteral("background: white; border: 1px solid #dfe5ed; border-radius: 5px; padding: 10px; color: #2c3949;"));
-    auto* searchRow = new QHBoxLayout();
-    binarySearch_ = new QLineEdit(page);
-    binarySearch_->setPlaceholderText(QStringLiteral("Cari string ASCII di seluruh berkas yang dimuat…"));
-    auto* searchButton = new QPushButton(QStringLiteral("Cari"), page);
-    connect(searchButton, &QPushButton::clicked, this, [this]() { searchBinaryText(); });
-    connect(binarySearch_, &QLineEdit::returnPressed, this, [this]() { searchBinaryText(); });
-    searchRow->addWidget(binarySearch_, 1);
-    searchRow->addWidget(searchButton);
-    hexView_ = new QTextEdit(page);
-    hexView_->setObjectName(QStringLiteral("binaryHexPreview"));
-    hexView_->setReadOnly(true);
-    hexView_->setLineWrapMode(QTextEdit::NoWrap);
-    hexView_->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
-    hexView_->setStyleSheet(QStringLiteral("QTextEdit { background: #151a22; color: #d8e3f0; border: 1px solid #2b3544; border-radius: 5px; padding: 8px; }"));
-    layout->addWidget(heading);
-    layout->addWidget(intro);
-    layout->addWidget(openButton, 0, Qt::AlignLeft);
-    layout->addWidget(binaryInfo_);
-    layout->addLayout(searchRow);
-    layout->addWidget(hexView_, 1);
-    renderHexPreview();
-    return page;
-}
-
-QWidget* MainWindow::buildModelInspectorPage() {
-    auto* page = new QWidget(this);
-    auto* layout = new QVBoxLayout(page);
-    layout->setContentsMargins(24, 22, 24, 20);
-    layout->setSpacing(12);
-
-    auto* heading = new QLabel(QStringLiteral("3D Model & Animasi — MDL Inspector"), page);
-    heading->setStyleSheet(QStringLiteral("font-size: 23px; font-weight: 700; color: #233246;"));
-    auto* intro = new QLabel(
-        QStringLiteral("Profil read-only untuk berkas .mdl. Tahap ini memeriksa pola header, invariant SL01, marker empat-byte, dan string yang tampak seperti path. Geometri maupun animasi belum didekode; tidak ada file yang diubah."),
-        page);
-    intro->setWordWrap(true);
-    intro->setStyleSheet(QStringLiteral("color: #667487;"));
-
-    auto* openButton = new QPushButton(QStringLiteral("Buka berkas model .mdl…"), page);
-    openButton->setMinimumHeight(36);
-    connect(openButton, &QPushButton::clicked, this, [this]() { inspectModelDialog(); });
-
-    modelReport_ = new QPlainTextEdit(page);
-    modelReport_->setObjectName(QStringLiteral("modelInspectionReport"));
-    modelReport_->setReadOnly(true);
-    modelReport_->setLineWrapMode(QPlainTextEdit::NoWrap);
-    modelReport_->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
-    modelReport_->setPlaceholderText(
-        QStringLiteral("Pilih berkas .mdl untuk melihat laporan byte-level. Ukuran maksimum 64 MiB."));
-    modelReport_->setStyleSheet(QStringLiteral(
-        "QPlainTextEdit { background: #151a22; color: #d8e3f0; border: 1px solid #2a3442; padding: 10px; }"));
-
-    layout->addWidget(heading);
-    layout->addWidget(intro);
-    layout->addWidget(openButton, 0, Qt::AlignLeft);
-    layout->addWidget(modelReport_, 1);
-    return page;
-}
-
-QWidget* MainWindow::buildPlaceholderPage(const QString& title, const QString& summary,
-                                          const QStringList& plannedFeatures) {
-    auto* page = new QWidget(this);
-    auto* layout = new QVBoxLayout(page);
-    layout->setContentsMargins(30, 28, 30, 24);
-    layout->setSpacing(16);
-    auto* heading = new QLabel(title, page);
-    heading->setStyleSheet(QStringLiteral("font-size: 24px; font-weight: 700; color: #233246;"));
-    auto* status = new QLabel(QStringLiteral("WORKSPACE DISIAPKAN · IMPLEMENTASI FORMAT BELUM AKTIF"), page);
-    status->setStyleSheet(QStringLiteral("color: #805b13; background: #fff3cd; border: 1px solid #f1d68a; border-radius: 5px; padding: 8px 10px; font-weight: 600;"));
-    auto* desc = new QLabel(summary, page);
-    desc->setWordWrap(true);
-    desc->setStyleSheet(QStringLiteral("color: #536275; font-size: 14px;"));
-    auto* group = new QGroupBox(QStringLiteral("Rencana kemampuan"), page);
-    auto* groupLayout = new QVBoxLayout(group);
-    for (const QString& feature : plannedFeatures) {
-        auto* line = new QLabel(QStringLiteral("•  %1").arg(feature), group);
-        line->setWordWrap(true);
-        groupLayout->addWidget(line);
-    }
-    auto* extensionNote = new QLabel(QStringLiteral("Untuk mulai mengimplementasikan modul ini, buat plugin C++/Qt yang mengimplementasikan IWorkbenchPlugin, atau tambahkan handler format ke library core tanpa membuat dependency ke GUI."), page);
-    extensionNote->setWordWrap(true);
-    extensionNote->setStyleSheet(QStringLiteral("background: white; color: #59687a; border: 1px solid #dfe5ed; border-radius: 6px; padding: 14px;"));
-    layout->addWidget(heading);
-    layout->addWidget(status, 0, Qt::AlignLeft);
-    layout->addWidget(desc);
-    layout->addWidget(group);
-    layout->addWidget(extensionNote);
-    layout->addStretch(1);
     return page;
 }
 
