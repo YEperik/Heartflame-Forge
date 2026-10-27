@@ -87,6 +87,26 @@ int main() {
         assert(failed);
     }
     {
+        // Keep parsing/inspection permissive, but refuse to decode/replace an
+        // indexed payload whose GS PSM contradicts the byte-indexed profile.
+        auto bytes = make_test_tm2();
+        put_u64(bytes, 16U + 24U, 0U); // PSMCT32/unknown for this indexed payload.
+        auto file = ps2asset::texture::Tim2File::parse(std::move(bytes));
+        assert(file.picture_count() == 1U);
+        assert(file.pictures().front().psm() == 0U);
+        assert(!file.pictures().front().supports_rgba8_palette_replace());
+        bool decode_failed = false;
+        try { (void)file.decode_picture(0U); }
+        catch (const std::exception&) { decode_failed = true; }
+        assert(decode_failed);
+        ps2asset::texture::RgbaImage image;
+        image.width = 4U; image.height = 2U; image.pixels.resize(4U * 2U * 4U, 0U);
+        bool replace_failed = false;
+        try { file.replace_picture_rgba8_palette(0U, image); }
+        catch (const std::exception&) { replace_failed = true; }
+        assert(replace_failed);
+    }
+    {
         auto file = ps2asset::texture::Tim2File::parse(make_test_tm2());
         ps2asset::texture::RgbaImage wrong_size;
         wrong_size.width = 2U; wrong_size.height = 2U; wrong_size.pixels.resize(16U, 0U);
