@@ -66,7 +66,10 @@ private:
         ArchiveModule,
         BinaryModule,
         ModelModule,
+        ModelExportModule,
+        AnimationModule,
         AudioModule,
+        VideoModule,
         ScriptModule,
         BuiltInModuleCount
     };
@@ -77,8 +80,6 @@ private:
     QWidget* buildArchiveBrowserPage();
     QWidget* buildBinaryInspectorPage();
     QWidget* buildModelInspectorPage();
-    QWidget* buildPlaceholderPage(const QString& title, const QString& summary,
-                                  const QStringList& plannedFeatures);
     void selectModule(int row);
     void loadExtensionModules();
     void updateDashboardSummary();
