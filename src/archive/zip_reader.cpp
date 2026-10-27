@@ -1,4 +1,5 @@
 #include "ps2asset/archive/zip_reader.hpp"
+#include "ps2asset/io/new_file_transaction.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -20,6 +21,9 @@
 namespace ps2asset::archive {
 #ifdef PS2ASSET_HAS_LIBARCHIVE
 namespace {
+constexpr std::uint64_t kMaxArchiveEntries = 200000ULL;
+constexpr std::size_t kMaxReplacementTargets = 4096U;
+
 std::string lower_ascii(std::string text) {
     std::transform(text.begin(), text.end(), text.begin(), [](unsigned char c) {
         return static_cast<char>(std::tolower(c));
@@ -96,6 +100,10 @@ void replace_zip_entry(const std::string& archive_path, const std::string& entry
     std::error_code ec;
     const auto replacement_size = fs::file_size(replacement_file, ec);
     if (ec || replacement_size > max_replacement_size) throw std::runtime_error("Replacement file is missing or exceeds size limit");
+    if (replacement_size > std::numeric_limits<std::size_t>::max() ||
+        replacement_size > static_cast<std::uintmax_t>(std::numeric_limits<std::streamsize>::max())) {
+        throw std::runtime_error("Replacement file is too large for this platform or stream API");
+    }
     std::vector<std::uint8_t> replacement(static_cast<std::size_t>(replacement_size));
     std::ifstream replacement_stream(replacement_file, std::ios::binary);
     if (!replacement_stream || (!replacement.empty() && !replacement_stream.read(reinterpret_cast<char*>(replacement.data()), static_cast<std::streamsize>(replacement.size()))))
@@ -128,7 +136,8 @@ void replace_zip_entries_bytes(const std::string& archive_path,
     if (replacements.empty()) throw std::runtime_error("At least one ZIP entry replacement is required");
     if (max_replacement_size == 0U || max_total_replacement_size == 0U)
         throw std::runtime_error("Replacement size limits must be positive");
-    if (fs::exists(output_archive)) throw std::runtime_error("Output archive already exists; refusing to overwrite it");
+    if (replacements.size() > kMaxReplacementTargets)
+        throw std::runtime_error("Too many replacement targets (limit 4096)");
 
     std::unordered_map<std::string, std::size_t> replacement_by_path;
     replacement_by_path.reserve(replacements.size());
@@ -158,14 +167,12 @@ void replace_zip_entries_bytes(const std::string& archive_path,
     if (archive_write_set_format_zip(writer.get()) != ARCHIVE_OK)
         throw std::runtime_error("Unable to configure ZIP writer");
 
-    const fs::path output_path(output_archive);
-    const fs::path temp_path = output_path.parent_path() / (output_path.filename().string() + ".tmp-ps2asset");
-    if (fs::exists(temp_path)) throw std::runtime_error("Temporary output path already exists; remove it or choose another output name");
-    bool temp_created = false;
+    ps2asset::io::NewFileTransaction output_transaction{fs::path(output_archive)};
+    const fs::path& temp_path = output_transaction.temporary_path();
     std::unordered_set<std::string> found_targets;
     found_targets.reserve(replacements.size());
+    std::uint64_t entries_seen = 0U;
     try {
-        temp_created = true; // Also clean a partially created file if opening the writer fails.
         if (archive_write_open_filename(writer.get(), temp_path.string().c_str()) != ARCHIVE_OK)
             throw std::runtime_error(std::string("Unable to create temporary ZIP: ") + (archive_error_string(writer.get()) ? archive_error_string(writer.get()) : "unknown error"));
         archive_entry* input_entry = nullptr;
@@ -174,6 +181,8 @@ void replace_zip_entries_bytes(const std::string& archive_path,
             const int status = archive_read_next_header(reader.get(), &input_entry);
             if (status == ARCHIVE_EOF) break;
             if (status < ARCHIVE_WARN) throw std::runtime_error(std::string("Error reading source ZIP: ") + (archive_error_string(reader.get()) ? archive_error_string(reader.get()) : "unknown error"));
+            if (++entries_seen > kMaxArchiveEntries)
+                throw std::runtime_error("Source ZIP exceeds the 200000-entry safety limit");
             const char* raw_name = archive_entry_pathname_utf8(input_entry);
             if (!raw_name) raw_name = archive_entry_pathname(input_entry);
             const std::string name = raw_name ? raw_name : "";
@@ -224,15 +233,12 @@ void replace_zip_entries_bytes(const std::string& archive_path,
         }
         if (archive_write_close(writer.get()) != ARCHIVE_OK) throw std::runtime_error(std::string("Unable to finalize ZIP: ") + (archive_error_string(writer.get()) ? archive_error_string(writer.get()) : "unknown error"));
         if (archive_read_close(reader.get()) != ARCHIVE_OK) throw std::runtime_error("Unable to close source ZIP cleanly");
-        std::error_code ec;
-        fs::rename(temp_path, output_path, ec);
-        if (ec) throw std::runtime_error("Unable to commit output ZIP: " + ec.message());
-        temp_created = false;
+        output_transaction.commit();
     } catch (...) {
-        // Release file handles before removing the temporary output (important on Windows).
+        // Release archive handles before the transaction removes its private
+        // temporary directory (important on Windows).
         writer.reset();
         reader.reset();
-        if (temp_created) { std::error_code ignored; fs::remove(temp_path, ignored); }
         throw;
     }
 #endif
@@ -271,6 +277,7 @@ std::vector<ArchivedTexture> read_tim2_entries_from_zip(const std::string& archi
 
     std::vector<ArchivedTexture> result;
     std::uint64_t total_bytes = 0;
+    std::uint64_t entries_seen = 0U;
     archive_entry* entry = nullptr;
     for (;;) {
         const int status = archive_read_next_header(reader.get(), &entry);
@@ -279,6 +286,7 @@ std::vector<ArchivedTexture> read_tim2_entries_from_zip(const std::string& archi
             const char* error = archive_error_string(reader.get());
             throw std::runtime_error("Error while reading ZIP directory: " + std::string(error ? error : "unknown error"));
         }
+        if (++entries_seen > 200000ULL) throw std::runtime_error("ZIP exceeds the 200000-entry safety limit");
         if (archive_entry_filetype(entry) != AE_IFREG) {
             archive_read_data_skip(reader.get());
             continue;
