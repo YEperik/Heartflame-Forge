@@ -2,6 +2,7 @@
 
 #include "ps2asset/archive/zip_reader.hpp"
 #include "ps2asset/inspect.hpp"
+#include "ps2asset/model/inspect.hpp"
 
 #include <QAction>
 #include <QByteArray>
@@ -217,7 +218,7 @@ void MainWindow::buildUi() {
     connect(binaryAction, &QAction::triggered, this, [this]() { selectModule(BinaryModule); });
     connect(aboutAction, &QAction::triggered, this, [this]() {
         QMessageBox::about(this, QStringLiteral("Tentang PS2 Asset Workbench"),
-            QStringLiteral("<b>PS2 Asset Workbench 0.8.0</b><br>Desktop workbench C++17/CMake untuk eksplorasi aset game PS2.<br><br>Modul tersedia: Texture Workshop, Archive Browser dengan ekspor ZIP hasil edit, Binary Inspector, CLI, serta API extension dinamis.<br>Import TIM2 saat ini dibatasi pada profil indexed 8-bit + CLUT RGBA32 yang telah divalidasi dari sampel.<br><br>Modul model, audio, dan script ditampilkan sebagai ruang kerja lanjutan; decoder untuk format tersebut belum diimplementasikan."));
+            QStringLiteral("<b>PS2 Asset Workbench 0.9.0</b><br>Desktop workbench C++17/CMake untuk eksplorasi aset game PS2.<br><br>Modul tersedia: Texture Workshop, Archive Browser dengan batch ZIP replacement, Binary Inspector, dan profiler read-only kandidat model .mdl.<br>Import TIM2 dibatasi pada profil indexed 8-bit + CLUT RGBA32 yang telah divalidasi dari sampel.<br><br>Profiler MDL melaporkan marker byte dan kandidat string path; belum mendekode mesh, material, skeleton, atau animasi."));
     });
 
     auto* root = new QWidget(this);
@@ -263,10 +264,7 @@ void MainWindow::buildUi() {
     moduleStack_->addWidget(buildTexturePage());
     moduleStack_->addWidget(buildArchiveBrowserPage());
     moduleStack_->addWidget(buildBinaryInspectorPage());
-    moduleStack_->addWidget(buildPlaceholderPage(
-        QStringLiteral("3D Model & Animasi"),
-        QStringLiteral("Workspace untuk inspeksi geometri, material, skeleton, dan animasi PS2. Belum ada decoder model proprietary yang divalidasi pada tahap ini."),
-        QStringList() << QStringLiteral("Inspeksi chunk dan tabel offset") << QStringLiteral("Ekspor geometri ke OBJ / glTF bila format diketahui") << QStringLiteral("Visualisasi mesh, UV, material, dan hierarki tulang")));
+    moduleStack_->addWidget(buildModelInspectorPage());
     moduleStack_->addWidget(buildPlaceholderPage(
         QStringLiteral("Audio & Video"),
         QStringLiteral("Workspace untuk inventaris stream, metadata audio, dan cutscene. Identifikasi signature dasar tersedia pada Binary Inspector; decoding penuh belum diaktifkan."),
@@ -531,6 +529,41 @@ QWidget* MainWindow::buildBinaryInspectorPage() {
     layout->addLayout(searchRow);
     layout->addWidget(hexView_, 1);
     renderHexPreview();
+    return page;
+}
+
+QWidget* MainWindow::buildModelInspectorPage() {
+    auto* page = new QWidget(this);
+    auto* layout = new QVBoxLayout(page);
+    layout->setContentsMargins(24, 22, 24, 20);
+    layout->setSpacing(12);
+
+    auto* heading = new QLabel(QStringLiteral("3D Model & Animasi — MDL Inspector"), page);
+    heading->setStyleSheet(QStringLiteral("font-size: 23px; font-weight: 700; color: #233246;"));
+    auto* intro = new QLabel(
+        QStringLiteral("Profil read-only untuk berkas .mdl. Tahap ini memeriksa pola header, invariant SL01, marker empat-byte, dan string yang tampak seperti path. Geometri maupun animasi belum didekode; tidak ada file yang diubah."),
+        page);
+    intro->setWordWrap(true);
+    intro->setStyleSheet(QStringLiteral("color: #667487;"));
+
+    auto* openButton = new QPushButton(QStringLiteral("Buka berkas model .mdl…"), page);
+    openButton->setMinimumHeight(36);
+    connect(openButton, &QPushButton::clicked, this, [this]() { inspectModelDialog(); });
+
+    modelReport_ = new QPlainTextEdit(page);
+    modelReport_->setObjectName(QStringLiteral("modelInspectionReport"));
+    modelReport_->setReadOnly(true);
+    modelReport_->setLineWrapMode(QPlainTextEdit::NoWrap);
+    modelReport_->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
+    modelReport_->setPlaceholderText(
+        QStringLiteral("Pilih berkas .mdl untuk melihat laporan byte-level. Ukuran maksimum 64 MiB."));
+    modelReport_->setStyleSheet(QStringLiteral(
+        "QPlainTextEdit { background: #151a22; color: #d8e3f0; border: 1px solid #2a3442; padding: 10px; }"));
+
+    layout->addWidget(heading);
+    layout->addWidget(intro);
+    layout->addWidget(openButton, 0, Qt::AlignLeft);
+    layout->addWidget(modelReport_, 1);
     return page;
 }
 
@@ -867,7 +900,7 @@ void MainWindow::importSelectedTexture() {
     if (image.size() != QSize(pic.width, pic.height)) {
         const auto answer = QMessageBox::question(this, QStringLiteral("Sesuaikan dimensi?"),
             QStringLiteral("Gambar berukuran %1×%2, sedangkan target adalah %3×%4.\n\nSkalakan otomatis ke ukuran tekstur?")
-                .arg(image.width()).arg(image.height()).arg(pic.width).arg(pic.height),
+                .arg(image.width()).arg(image.height()).arg(pic.width).arg(pic.height()),
             QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes);
         if (answer != QMessageBox::Yes) return;
         image = image.scaled(QSize(pic.width, pic.height), Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
@@ -1108,6 +1141,43 @@ void MainWindow::openSelectedArchiveTexture() {
             textureList_->setCurrentRow(row);
             return;
         }
+    }
+}
+
+void MainWindow::inspectModelDialog() {
+    const QString path = QFileDialog::getOpenFileName(
+        this, QStringLiteral("Pilih model .mdl"), QString(),
+        QStringLiteral("Model MDL (*.mdl);;Semua file (*.*)"));
+    if (path.isEmpty()) return;
+
+    try {
+        QFile file(path);
+        if (!file.open(QIODevice::ReadOnly)) {
+            throw std::runtime_error(
+                QStringLiteral("Tidak dapat membuka berkas model: %1").arg(file.errorString()).toStdString());
+        }
+        if (file.size() < 0 || file.size() > kMaxBinaryInspectBytes) {
+            throw std::runtime_error("Ukuran model melebihi batas read-only inspector sebesar 64 MiB.");
+        }
+        const auto size = static_cast<std::size_t>(file.size());
+        std::vector<std::uint8_t> bytes(size);
+        if (!bytes.empty()) {
+            const qint64 requested = static_cast<qint64>(bytes.size());
+            const qint64 read = file.read(reinterpret_cast<char*>(bytes.data()), requested);
+            if (read != requested) {
+                throw std::runtime_error("Pembacaan berkas model tidak lengkap.");
+            }
+        }
+        const auto report = ps2asset::model::inspect_model_bytes(bytes, path.toStdString());
+        modelReport_->setPlainText(QString::fromStdString(ps2asset::model::format_model_report(report)));
+        selectModule(ModelModule);
+        appendLog(QStringLiteral("[Model] Profiled %1 (%2 bytes; %3 marker types)")
+            .arg(QDir::toNativeSeparators(path))
+            .arg(static_cast<qulonglong>(report.file_size))
+            .arg(static_cast<qulonglong>(report.markers.size())));
+        statusBar()->showMessage(QStringLiteral("Profil MDL selesai. File hanya dibaca; tidak ada perubahan yang ditulis."), 7000);
+    } catch (const std::exception& error) {
+        QMessageBox::critical(this, QStringLiteral("Gagal memeriksa model"), safeExceptionText(error));
     }
 }
 
