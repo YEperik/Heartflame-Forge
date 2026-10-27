@@ -1,0 +1,6 @@
+cmake_minimum_required(VERSION 3.16)
+project(HeartflameForgePackageConsumer LANGUAGES CXX)
+find_package(HeartflameForge 1.3 CONFIG REQUIRED)
+add_executable(package_consumer main.cpp)
+target_link_libraries(package_consumer PRIVATE HeartflameForge::core HeartflameForge::png)
+target_compile_features(package_consumer PRIVATE cxx_std_17)
