@@ -1,0 +1,257 @@
+name: Heartflame Forge — Windows
+
+on:
+  push:
+    branches: [main, master]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-x64:
+    name: Build, test, and package Windows x64
+    runs-on: windows-2022
+    timeout-minutes: 90
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Read project version and validate release tag
+        shell: pwsh
+        run: |
+          $version = (Get-Content VERSION -Raw).Trim()
+          if ([string]::IsNullOrWhiteSpace($version)) { throw 'VERSION is empty.' }
+          if ($env:GITHUB_REF_TYPE -eq 'tag' -and $env:GITHUB_REF_NAME -ne "v$version") {
+            throw "Release tag '$env:GITHUB_REF_NAME' does not match VERSION v$version."
+          }
+          "HEARTFLAME_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Host "Building Heartflame Forge $version"
+
+      - name: Install Qt 6 for MSVC 2022 x64
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.8.3'
+          host: windows
+          target: desktop
+          arch: win64_msvc2022_64
+          cache: true
+          set-env: true
+
+      - name: Prepare vcpkg
+        shell: pwsh
+        run: |
+          $root = $env:VCPKG_INSTALLATION_ROOT
+          if (-not $root -or -not (Test-Path (Join-Path $root 'vcpkg.exe'))) {
+            $root = Join-Path $env:RUNNER_TEMP 'vcpkg'
+            if (-not (Test-Path (Join-Path $root 'vcpkg.exe'))) {
+              git clone --depth 1 https://github.com/microsoft/vcpkg.git $root
+              if ($LASTEXITCODE -ne 0) { throw 'Could not clone vcpkg.' }
+              & (Join-Path $root 'bootstrap-vcpkg.bat') -disableMetrics
+              if ($LASTEXITCODE -ne 0) { throw 'Could not bootstrap vcpkg.' }
+            }
+          }
+          "VCPKG_ROOT=$root" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Host "Using vcpkg at $root"
+
+      - name: Install native dependencies
+        shell: pwsh
+        run: |
+          $vcpkg = Join-Path $env:VCPKG_ROOT 'vcpkg.exe'
+          & $vcpkg install --triplet x64-windows-static-md "--overlay-triplets=$PWD\triplets"
+          if ($LASTEXITCODE -ne 0) { throw 'vcpkg dependency installation failed.' }
+
+      - name: Configure strict Qt GUI build
+        shell: pwsh
+        run: |
+          cmake -S . -B build-win -G "Visual Studio 17 2022" -A x64 `
+            "-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_ROOT\scripts\buildsystems\vcpkg.cmake" `
+            -DVCPKG_TARGET_TRIPLET=x64-windows-static-md `
+            "-DVCPKG_OVERLAY_TRIPLETS=$PWD\triplets" `
+            "-DVCPKG_INSTALLED_DIR=$PWD\vcpkg_installed" `
+            "-DCMAKE_PREFIX_PATH=$env:QT_ROOT_DIR" `
+            -DPS2ASSET_BUILD_GUI=ON `
+            -DPS2ASSET_REQUIRE_GUI=ON `
+            -DPS2ASSET_BUILD_SAMPLE_PLUGIN=ON `
+            -DPS2ASSET_BUILD_CLI=ON `
+            -DPS2ASSET_ENABLE_ARCHIVE=ON `
+            -DPS2ASSET_ENABLE_PNG=ON `
+            -DBUILD_TESTING=ON
+          if ($LASTEXITCODE -ne 0) { throw 'CMake configuration failed; the GUI is mandatory for this job.' }
+
+      - name: Build Release
+        shell: pwsh
+        run: |
+          cmake --build build-win --config Release --parallel 2
+          if ($LASTEXITCODE -ne 0) { throw 'Windows Release build failed.' }
+
+      - name: Unit tests and GUI startup smoke test
+        shell: pwsh
+        run: |
+          $env:QT_QPA_PLATFORM = 'offscreen'
+          $env:QT_QPA_PLATFORM_PLUGIN_PATH = Join-Path $env:QT_ROOT_DIR 'plugins\platforms'
+          $env:QT_PLUGIN_PATH = Join-Path $env:QT_ROOT_DIR 'plugins'
+          ctest --test-dir build-win -C Release --output-on-failure
+          if ($LASTEXITCODE -ne 0) { throw 'CTest failed.' }
+          $app = Join-Path $PWD 'build-win\Release\HeartflameForge.exe'
+          if (-not (Test-Path $app)) { throw "GUI executable not found: $app" }
+          & $app --smoke-test
+          if ($LASTEXITCODE -ne 0) { throw 'GUI startup smoke test failed.' }
+
+      - name: Install and prepare portable runtime layout
+        shell: pwsh
+        run: |
+          $dist = Join-Path $PWD 'dist'
+          $stage = Join-Path $dist 'HeartflameForge'
+          New-Item -ItemType Directory -Force -Path $dist | Out-Null
+          cmake --install build-win --config Release --prefix $stage
+          if ($LASTEXITCODE -ne 0) { throw 'CMake install failed.' }
+          $app = Join-Path $stage 'HeartflameForge.exe'
+          if (-not (Test-Path $app)) { throw "Installed GUI executable missing: $app" }
+
+          # Keep CLI utilities but separate them from the user-facing GUI root.
+          $bin = Join-Path $stage 'bin'
+          if (Test-Path $bin) {
+            $tools = Join-Path $stage 'tools'
+            Move-Item $bin $tools
+          }
+          # Public SDK files are not needed in the portable runtime distribution.
+          foreach ($devPath in @('include', 'lib')) {
+            $path = Join-Path $stage $devPath
+            if (Test-Path $path) { Remove-Item -Recurse -Force $path }
+          }
+
+          $windeployqt = Join-Path $env:QT_ROOT_DIR 'bin\windeployqt.exe'
+          if (-not (Test-Path $windeployqt)) { throw "windeployqt not found: $windeployqt" }
+          & $windeployqt --release --no-compiler-runtime --no-translations --dir $stage $app
+          if ($LASTEXITCODE -ne 0) { throw 'windeployqt failed.' }
+
+          # Copy Qt's license texts from the same installed Qt distribution.
+          $qtRoot = Split-Path (Split-Path $env:QT_ROOT_DIR -Parent) -Parent
+          $qtLicenses = Join-Path $qtRoot 'Licenses'
+          if (-not (Test-Path $qtLicenses)) { $qtLicenses = Join-Path $qtRoot 'licenses' }
+          if (-not (Test-Path $qtLicenses)) { throw "Qt license directory not found under $qtRoot" }
+          $licenseDest = Join-Path $stage 'THIRD_PARTY_LICENSES\Qt'
+          New-Item -ItemType Directory -Force -Path $licenseDest | Out-Null
+          Copy-Item (Join-Path $qtLicenses '*') $licenseDest -Recurse -Force
+
+          # Copy copyright/licence notices for every vcpkg port in this manifest's install tree.
+          $share = Join-Path $PWD 'vcpkg_installed\x64-windows-static-md\share'
+          if (-not (Test-Path $share)) { throw "vcpkg share directory missing: $share" }
+          $vcpkgNotices = Join-Path $stage 'THIRD_PARTY_LICENSES\vcpkg'
+          New-Item -ItemType Directory -Force -Path $vcpkgNotices | Out-Null
+          foreach ($portDir in Get-ChildItem $share -Directory) {
+            $copyright = Join-Path $portDir.FullName 'copyright'
+            if (Test-Path $copyright) {
+              $portOut = Join-Path $vcpkgNotices $portDir.Name
+              New-Item -ItemType Directory -Force -Path $portOut | Out-Null
+              Copy-Item $copyright (Join-Path $portOut 'copyright.txt') -Force
+            }
+          }
+
+          foreach ($file in @('README.md', 'LICENSE', 'SECURITY.md', 'THIRD_PARTY_NOTICES.md')) {
+            Copy-Item (Join-Path $PWD $file) $stage -Force
+          }
+          Copy-Item 'docs\PRIVACY_AND_MODDER_SAFETY.md' $stage -Force
+          Copy-Item 'packaging\windows\README-WINDOWS.txt' $stage -Force
+          Copy-Item 'packaging\windows\RUN-HEARTFLAME-FORGE.bat' $stage -Force
+          Copy-Item 'packaging\windows\INSTALL-VC-RUNTIME.bat' $stage -Force
+
+      - name: Smoke-test the deployed portable GUI
+        shell: pwsh
+        run: |
+          $app = Join-Path $PWD 'dist\HeartflameForge\HeartflameForge.exe'
+          if (-not (Test-Path $app)) { throw "Deployed GUI executable missing: $app" }
+          # This is a new step, so no Qt environment variables from the build-tree
+          # smoke test are inherited. The deployed application must find its own
+          # Qt platform plugins and the installed sample extension.
+          Remove-Item Env:\QT_QPA_PLATFORM -ErrorAction SilentlyContinue
+          Remove-Item Env:\QT_QPA_PLATFORM_PLUGIN_PATH -ErrorAction SilentlyContinue
+          Remove-Item Env:\QT_PLUGIN_PATH -ErrorAction SilentlyContinue
+          & $app --smoke-test
+          if ($LASTEXITCODE -ne 0) { throw 'Deployed portable GUI smoke test failed.' }
+
+      - name: Download and verify Microsoft's VC++ runtime
+        shell: pwsh
+        run: |
+          $redist = Join-Path $PWD 'dist\VC_redist.x64.exe'
+          Invoke-WebRequest -Uri 'https://aka.ms/vc14/vc_redist.x64.exe' -OutFile $redist
+          $signature = Get-AuthenticodeSignature -FilePath $redist
+          if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch 'Microsoft Corporation') {
+            throw "The VC++ redistributable signature is not a valid Microsoft signature: $($signature.Status)"
+          }
+          Copy-Item $redist (Join-Path $PWD 'dist\HeartflameForge\VC_redist.x64.exe') -Force
+
+      - name: Create portable ZIP
+        shell: pwsh
+        run: |
+          $dist = Join-Path $PWD 'dist'
+          $stage = Join-Path $dist 'HeartflameForge'
+          $zip = Join-Path $dist "HeartflameForge-Portable-x64-v$env:HEARTFLAME_VERSION.zip"
+          if (Test-Path $zip) { Remove-Item $zip -Force }
+          Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $zip -CompressionLevel Optimal
+          if ($LASTEXITCODE -ne 0) { throw 'Portable ZIP packaging failed.' }
+
+      - name: Install Inno Setup and create installer
+        shell: pwsh
+        run: |
+          $iscc = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe'
+          if (-not (Test-Path $iscc)) {
+            choco install innosetup --yes --no-progress
+            if ($LASTEXITCODE -ne 0) { throw 'Could not install Inno Setup.' }
+          }
+          if (-not (Test-Path $iscc)) { throw "ISCC.exe not found: $iscc" }
+          $stage = Join-Path $PWD 'dist\HeartflameForge'
+          $redist = Join-Path $PWD 'dist\VC_redist.x64.exe'
+          $dist = Join-Path $PWD 'dist'
+          & $iscc "/DAppVersion=$env:HEARTFLAME_VERSION" "/DStageDir=$stage" "/DRedistPath=$redist" "/DOutputDir=$dist" 'packaging\windows\HeartflameForge.iss'
+          if ($LASTEXITCODE -ne 0) { throw 'Inno Setup compilation failed.' }
+
+      - name: Generate SHA-256 checksums
+        shell: pwsh
+        run: |
+          $dist = Join-Path $PWD 'dist'
+          $portable = Get-ChildItem $dist -Filter 'HeartflameForge-Portable-x64-*.zip' | Select-Object -First 1
+          $setup = Get-ChildItem $dist -Filter 'HeartflameForge-Setup-x64-*.exe' | Select-Object -First 1
+          if (-not $portable -or -not $setup) { throw 'Expected release packages were not produced.' }
+          $lines = @(
+            "$(Get-FileHash $portable.FullName -Algorithm SHA256 | Select-Object -ExpandProperty Hash)  $($portable.Name)",
+            "$(Get-FileHash $setup.FullName -Algorithm SHA256 | Select-Object -ExpandProperty Hash)  $($setup.Name)"
+          )
+          $lines | Set-Content (Join-Path $dist 'SHA256SUMS.txt') -Encoding ascii
+          Get-Content (Join-Path $dist 'SHA256SUMS.txt')
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: HeartflameForge-Windows-x64-${{ github.sha }}
+          path: |
+            dist/HeartflameForge-Setup-x64-*.exe
+            dist/HeartflameForge-Portable-x64-*.zip
+            dist/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 30
+
+  publish-release:
+    name: Publish tagged release assets
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: windows-x64
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download Windows artifacts
+        uses: actions/download-artifact@v8
+        with:
+          name: HeartflameForge-Windows-x64-${{ github.sha }}
+          path: release-assets
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v3
+        with:
+          files: |
+            release-assets/HeartflameForge-Setup-x64-${{ github.ref_name }}.exe
+            release-assets/HeartflameForge-Portable-x64-${{ github.ref_name }}.zip
+            release-assets/SHA256SUMS.txt
+          generate_release_notes: true
