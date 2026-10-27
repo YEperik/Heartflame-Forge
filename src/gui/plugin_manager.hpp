@@ -1,7 +1,7 @@
 #pragma once
 
 #include "ps2asset/workbench/plugin_interface.hpp"
-#include <QPluginLoader>
+
 #include <QStringList>
 #include <QWidget>
 #include <memory>
