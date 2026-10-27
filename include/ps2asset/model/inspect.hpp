@@ -22,6 +22,11 @@ struct ModelInspectionResult {
     std::uint32_t sl01_field04 = 0;
     std::uint32_t sl01_field08 = 0;
     std::vector<MarkerSummary> markers;
+    std::uint64_t validated_sl01_blocks = 0;
+    std::uint64_t sl01_signature_hits = 0;
+    std::uint64_t sl01_rejected_candidates = 0;
+    bool sl01_scan_aborted_hit_limit = false;
+    std::vector<std::uint64_t> first_sl01_block_offsets;
     std::vector<std::string> embedded_path_candidates;
     std::vector<std::string> warnings;
 };
