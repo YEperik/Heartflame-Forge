@@ -76,6 +76,7 @@ private:
     QWidget* buildTexturePage();
     QWidget* buildArchiveBrowserPage();
     QWidget* buildBinaryInspectorPage();
+    QWidget* buildModelInspectorPage();
     QWidget* buildPlaceholderPage(const QString& title, const QString& summary,
                                   const QStringList& plannedFeatures);
     void selectModule(int row);
@@ -101,6 +102,7 @@ private:
     void filterArchiveEntries();
     void openSelectedArchiveTexture();
     void inspectBinaryDialog();
+    void inspectModelDialog();
     void searchBinaryText();
     void renderHexPreview();
 
@@ -119,6 +121,7 @@ private:
     QLabel* archiveSummary_ = nullptr;
     QDockWidget* logDock_ = nullptr;
     QPlainTextEdit* logView_ = nullptr;
+    QPlainTextEdit* modelReport_ = nullptr;
     QTableWidget* archiveTable_ = nullptr;
     QLineEdit* archiveFilter_ = nullptr;
     QTextEdit* hexView_ = nullptr;
