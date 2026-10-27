@@ -87,6 +87,7 @@ void validate_asset(const AssetInput& asset, std::size_t& picture_count,
     auto file = Tim2File::parse(asset.bytes);
     const auto original_size = file.bytes().size();
     const auto initial_pictures = file.pictures();
+    const auto unsupported_before = unsupported_count;
     std::vector<std::optional<RgbaImage>> expected(initial_pictures.size());
 
     for (std::size_t i = 0; i < initial_pictures.size(); ++i) {
@@ -145,9 +146,16 @@ void validate_asset(const AssetInput& asset, std::size_t& picture_count,
             throw std::runtime_error("Save/reparse/decode round-trip mismatch in " + asset.name + " picture " + std::to_string(i));
         }
     }
-    std::cout << "  PASS " << asset.name << " (" << reparsed.picture_count() << " picture(s), "
-              << original_size << " bytes; " << (png_roundtrip ? "PNG export/import + replacement + reparse" : "synthetic replacement + reparse")
-              << " passed)\n";
+    const bool skipped_unsupported = unsupported_count != unsupported_before;
+    std::cout << "  " << (skipped_unsupported ? "PARTIAL " : "PASS ") << asset.name
+              << " (" << reparsed.picture_count() << " picture(s), " << original_size << " bytes; ";
+    if (skipped_unsupported) {
+        std::cout << (png_roundtrip ? "PNG encode/decode checked where supported" : "replacement checked where supported")
+                  << "; unsupported picture profile(s) were skipped)\n";
+    } else {
+        std::cout << (png_roundtrip ? "PNG export/import + replacement + reparse" : "synthetic replacement + reparse")
+                  << " passed)\n";
+    }
 }
 
 
@@ -185,6 +193,8 @@ std::vector<std::uint8_t> make_self_test_tm2() {
     bytes[file_header + 19U] = 5U; // indexed 8-bit
     put_u16(bytes, file_header + 20U, static_cast<std::uint16_t>(width));
     put_u16(bytes, file_header + 22U, static_cast<std::uint16_t>(height));
+    // Mark this synthetic fixture as the PSMT8 profile used by the decoder.
+    put_u32(bytes, file_header + 24U, 19U << 20U);
     const auto image_offset = file_header + picture_header;
     for (std::size_t i = 0; i < image_size; ++i) bytes[image_offset + i] = static_cast<std::uint8_t>(i % 4U);
     const auto clut_offset = image_offset + image_size;
@@ -200,7 +210,7 @@ std::vector<std::uint8_t> make_self_test_tm2() {
 }
 
 void usage() {
-    std::cerr << "PS2 Asset Workbench - read-only TIM2 replacement round-trip validator\n"
+    std::cerr << "Heartflame Forge - read-only TIM2 replacement round-trip validator\n"
               << "Usage: ps2asset-texture-validate <input.tm2|archive.zip>\n"
               << "       ps2asset-texture-validate --self-test\n"
               << "       ps2asset-texture-validate --png-roundtrip <input.tm2|archive.zip>\n"
@@ -277,6 +287,7 @@ int main(int argc, char** argv) {
                   << "  Input files modified: 0\n";
         if (failed_count != 0U) return 1;
         if (supported_count == 0U) {
+            std::cout.flush();
             std::cerr << "No pictures matched the currently supported replacement profile.\n";
             return 3;
         }
