@@ -13,7 +13,7 @@ public:
     QString id() const override { return QStringLiteral("sample.diagnostics"); }
     QString displayName() const override { return QStringLiteral("Contoh Extension"); }
     QString description() const override {
-        return QStringLiteral("Contoh modul dinamis untuk memvalidasi extension API Workbench.");
+        return QStringLiteral("Contoh modul dinamis untuk memvalidasi extension API Heartflame Forge.");
     }
 
     QWidget* createWidget(QWidget* parent) override {
