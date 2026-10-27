@@ -4,6 +4,7 @@
 #undef NDEBUG
 #endif
 #include <cassert>
+#include <algorithm>
 #include <cstdint>
 #include <iostream>
 #include <string>
@@ -27,12 +28,13 @@ int main() {
         assert(r.is_sl01 && r.sl01_length_checked && !r.sl01_length_matches);
     }
     {
-        auto b = bytes({'T','I','M','2', 4,0, 1,0});
+        auto b = bytes({'T','I','M','2', 4,5, 1,0});
         auto r = ps2asset::inspect_header(b, 9280);
         assert(r.format == "TIM2 texture");
-        assert(r.details.size() == 2);
+        assert(r.details.size() == 3);
         assert(r.details[0] == "version=4");
-        assert(r.details[1] == "picture_count=1");
+        assert(r.details[1] == "format_type=5");
+        assert(r.details[2] == "picture_count=1");
     }
     {
         auto b = bytes({0,0,1,0xBA});
@@ -48,6 +50,27 @@ int main() {
         auto b = bytes({'M','I','G','.','0','0','.','1','P','S','P'});
         auto r = ps2asset::inspect_header(b, 64);
         assert(r.format == "Sony GIM image");
+    }
+    {
+        std::vector<std::uint8_t> b(48U, 0U);
+        b[0] = 'A'; b[1] = 'D'; b[2] = 'S'; b[3] = 'C';
+        b[8] = 'S'; b[9] = 'S'; b[10] = 'h'; b[11] = 'd';
+        b[12] = 24U;
+        b[40] = 'S'; b[41] = 'S'; b[42] = 'b'; b[43] = 'd';
+        b[44] = 64U;
+        const auto r = ps2asset::inspect_header(b, 1000U);
+        assert(r.format.find("ADSC") != std::string::npos);
+        assert(std::find(r.details.begin(), r.details.end(), "second chunk tag=SSbd at 0x28") != r.details.end());
+        assert(std::find(r.details.begin(), r.details.end(), "raw field@0x2C=64 (semantics unknown)") != r.details.end());
+        assert(std::find(r.details.begin(), r.details.end(), "file_size minus raw field@0x2C=936 (arithmetic only; not a decoded payload length)") != r.details.end());
+    }
+    {
+        auto b = bytes({'S','D','P','K'});
+        b.resize(40U, 0U);
+        const std::string observed = "IECSsreV";
+        std::copy(observed.begin(), observed.end(), b.begin() + 32);
+        const auto r = ps2asset::inspect_header(b, b.size());
+        assert(std::find(r.details.begin(), r.details.end(), "raw bytes@0x20=IECSsreV (observed marker; semantics unknown)") != r.details.end());
     }
     {
         auto r = ps2asset::inspect_header({}, 0);
