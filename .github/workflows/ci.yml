@@ -12,7 +12,7 @@ jobs:
       - name: Install build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake g++ qt6-base-dev libarchive-dev libpng-dev
+          sudo apt-get install -y cmake g++ qt6-base-dev libarchive-dev libpng-dev libassimp-dev
       - name: Configure
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DPS2ASSET_BUILD_GUI=ON -DPS2ASSET_BUILD_SAMPLE_PLUGIN=ON
       - name: Build all targets
