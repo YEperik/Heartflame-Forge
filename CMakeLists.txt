@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(PS2AssetWorkbench VERSION 0.8.0 LANGUAGES CXX)
+project(PS2AssetWorkbench VERSION 0.9.0 LANGUAGES CXX)
 
 include(CTest)
 include(GNUInstallDirs)
@@ -15,6 +15,7 @@ option(PS2ASSET_ENABLE_PNG "Enable PNG import/export utilities when libpng is av
 # can be used by the GUI, CLI, tests, or another application.
 add_library(ps2asset_core
     src/inspect.cpp
+    src/model/inspect.cpp
     src/texture/tim2.cpp
     src/archive/zip_reader.cpp
 )
@@ -77,6 +78,9 @@ endif()
 if(PS2ASSET_BUILD_CLI)
     add_executable(ps2asset-inspect src/main.cpp)
     target_link_libraries(ps2asset-inspect PRIVATE PS2AssetWorkbench::core)
+
+    add_executable(ps2asset-model-inspect src/model_cli.cpp)
+    target_link_libraries(ps2asset-model-inspect PRIVATE PS2AssetWorkbench::core)
 
     add_executable(ps2asset-texture src/texture_cli.cpp)
     target_link_libraries(ps2asset-texture PRIVATE PS2AssetWorkbench::core)
@@ -162,10 +166,19 @@ if(PS2ASSET_BUILD_GUI)
     endif()
 endif()
 
+if(BUILD_TESTING AND TARGET ps2asset-workbench)
+    add_test(NAME gui-startup-smoke COMMAND ps2asset-workbench --smoke-test)
+    set_tests_properties(gui-startup-smoke PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+endif()
+
 if(BUILD_TESTING)
     add_executable(ps2asset-inspect-tests tests/test_inspect.cpp)
     target_link_libraries(ps2asset-inspect-tests PRIVATE PS2AssetWorkbench::core)
     add_test(NAME header-inspection COMMAND ps2asset-inspect-tests)
+
+    add_executable(ps2asset-model-tests tests/test_model.cpp)
+    target_link_libraries(ps2asset-model-tests PRIVATE PS2AssetWorkbench::core)
+    add_test(NAME model-read-only-profile COMMAND ps2asset-model-tests)
 
     add_executable(ps2asset-tim2-tests tests/test_tim2.cpp)
     target_link_libraries(ps2asset-tim2-tests PRIVATE PS2AssetWorkbench::core)
@@ -199,6 +212,9 @@ install(TARGETS ps2asset_core
 )
 if(TARGET ps2asset-inspect)
     install(TARGETS ps2asset-inspect RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+endif()
+if(TARGET ps2asset-model-inspect)
+    install(TARGETS ps2asset-model-inspect RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 endif()
 if(TARGET ps2asset-texture)
     install(TARGETS ps2asset-texture RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
