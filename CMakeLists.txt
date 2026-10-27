@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(PS2AssetWorkbench VERSION 0.9.0 LANGUAGES CXX)
+project(PS2AssetWorkbench VERSION 1.0.0 LANGUAGES CXX)
 
 include(CTest)
 include(GNUInstallDirs)
@@ -16,6 +16,7 @@ option(PS2ASSET_ENABLE_PNG "Enable PNG import/export utilities when libpng is av
 add_library(ps2asset_core
     src/inspect.cpp
     src/model/inspect.cpp
+    src/model/containers.cpp
     src/texture/tim2.cpp
     src/archive/zip_reader.cpp
 )
@@ -81,6 +82,9 @@ if(PS2ASSET_BUILD_CLI)
 
     add_executable(ps2asset-model-inspect src/model_cli.cpp)
     target_link_libraries(ps2asset-model-inspect PRIVATE PS2AssetWorkbench::core)
+
+    add_executable(ps2asset-model-extract-sl01 src/model_extract_cli.cpp)
+    target_link_libraries(ps2asset-model-extract-sl01 PRIVATE PS2AssetWorkbench::core)
 
     add_executable(ps2asset-texture src/texture_cli.cpp)
     target_link_libraries(ps2asset-texture PRIVATE PS2AssetWorkbench::core)
@@ -180,6 +184,10 @@ if(BUILD_TESTING)
     target_link_libraries(ps2asset-model-tests PRIVATE PS2AssetWorkbench::core)
     add_test(NAME model-read-only-profile COMMAND ps2asset-model-tests)
 
+    add_executable(ps2asset-model-container-tests tests/test_model_container.cpp)
+    target_link_libraries(ps2asset-model-container-tests PRIVATE PS2AssetWorkbench::core)
+    add_test(NAME model-sl01-container-scan COMMAND ps2asset-model-container-tests)
+
     add_executable(ps2asset-tim2-tests tests/test_tim2.cpp)
     target_link_libraries(ps2asset-tim2-tests PRIVATE PS2AssetWorkbench::core)
     add_test(NAME tim2-decode-and-replace COMMAND ps2asset-tim2-tests)
@@ -215,6 +223,9 @@ if(TARGET ps2asset-inspect)
 endif()
 if(TARGET ps2asset-model-inspect)
     install(TARGETS ps2asset-model-inspect RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+endif()
+if(TARGET ps2asset-model-extract-sl01)
+    install(TARGETS ps2asset-model-extract-sl01 RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 endif()
 if(TARGET ps2asset-texture)
     install(TARGETS ps2asset-texture RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
