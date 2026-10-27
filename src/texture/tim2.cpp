@@ -1,4 +1,5 @@
 #include "ps2asset/texture/tim2.hpp"
+#include "ps2asset/io/new_file_transaction.hpp"
 
 #include <algorithm>
 #include <array>
@@ -252,7 +253,11 @@ std::string Tim2Picture::image_type_name() const {
 
 bool Tim2Picture::supports_rgba8_palette_replace() const noexcept {
     const auto pixel_count = static_cast<std::uint64_t>(width) * height;
-    return image_type == 5U && clut_type == 3U && clut_colors == 256U && clut_size == 1024U &&
+    // This decoder treats each image byte as one palette index. Do not infer
+    // that layout from TIM2 image_type alone when the GS TEX0 PSM disagrees.
+    // PSMT8 is 0x13 (decimal 19) on the supported profile observed in assets.
+    return image_type == 5U && psm() == 19U && clut_type == 3U &&
+           clut_colors == 256U && clut_size == 1024U &&
            mipmap_count == 1U && header_size == kTim2PictureHeaderSize &&
            pixel_count > 0U && pixel_count <= image_size &&
            image_offset <= std::numeric_limits<std::size_t>::max() &&
@@ -319,9 +324,11 @@ Tim2File Tim2File::parse(std::vector<std::uint8_t> bytes) {
 RgbaImage Tim2File::decode_picture(std::size_t index) const {
     if (index >= pictures_.size()) throw std::out_of_range("TIM2 picture index is out of range");
     const auto& p = pictures_[index];
-    if (p.image_type != 5U || p.clut_type != 3U || p.clut_size < 1024U || p.clut_colors < 256U) {
-        throw std::runtime_error("This first texture module decodes 8-bit indexed TIM2 pictures with an RGBA32 palette; this picture uses image_type=" +
-                                 std::to_string(p.image_type) + ", clut_type=" + std::to_string(p.clut_type));
+    if (p.image_type != 5U || p.psm() != 19U || p.clut_type != 3U ||
+        p.clut_size < 1024U || p.clut_colors < 256U) {
+        throw std::runtime_error("This decoder supports the validated PSMT8 (PSM=19) indexed TIM2 profile with an RGBA32 palette; this picture uses image_type=" +
+                                 std::to_string(p.image_type) + ", PSM=" + std::to_string(p.psm()) +
+                                 ", clut_type=" + std::to_string(p.clut_type));
     }
     const auto count64 = static_cast<std::uint64_t>(p.width) * p.height;
     if (count64 > p.image_size) throw std::runtime_error("TIM2 image payload is shorter than width * height for 8-bit indexed pixels");
@@ -376,7 +383,10 @@ std::vector<std::uint8_t> read_binary_file(const std::string& path, std::uint64_
     const auto size = std::filesystem::file_size(path, ec);
     if (ec) throw std::runtime_error("Cannot get file size for '" + path + "': " + ec.message());
     if (size > max_size) throw std::runtime_error("File exceeds configured maximum size: " + path);
-    if (size > std::numeric_limits<std::size_t>::max()) throw std::runtime_error("File is too large for this platform: " + path);
+    if (size > std::numeric_limits<std::size_t>::max() ||
+        size > static_cast<std::uintmax_t>(std::numeric_limits<std::streamsize>::max())) {
+        throw std::runtime_error("File is too large for this platform or stream API: " + path);
+    }
     std::ifstream input(path, std::ios::binary);
     if (!input) throw std::runtime_error("Cannot open file: " + path);
     std::vector<std::uint8_t> bytes(static_cast<std::size_t>(size));
@@ -386,31 +396,9 @@ std::vector<std::uint8_t> read_binary_file(const std::string& path, std::uint64_
 }
 
 void write_binary_file_atomic(const std::string& path, const std::vector<std::uint8_t>& bytes) {
-    const std::filesystem::path destination(path);
-    const auto parent = destination.has_parent_path() ? destination.parent_path() : std::filesystem::current_path();
-    const auto tick = std::chrono::steady_clock::now().time_since_epoch().count();
-    const auto temp = parent / (destination.filename().string() + ".tmp." + std::to_string(tick));
-    {
-        std::ofstream out(temp, std::ios::binary | std::ios::trunc);
-        if (!out) throw std::runtime_error("Cannot create temporary output file next to: " + path);
-        if (!bytes.empty()) out.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
-        out.flush();
-        if (!out) {
-            out.close();
-            std::error_code ignored;
-            std::filesystem::remove(temp, ignored);
-            throw std::runtime_error("Failed while writing temporary output file: " + path);
-        }
-    }
-    std::error_code ec;
-    std::filesystem::rename(temp, destination, ec);
-    if (ec) {
-        // On Windows rename may not replace an existing file. Do not delete the
-        // destination: preserve user data and report the failure explicitly.
-        std::error_code ignored;
-        std::filesystem::remove(temp, ignored);
-        throw std::runtime_error("Could not atomically install output file '" + path + "': " + ec.message());
-    }
+    // Historical API name retained for compatibility. This function creates a
+    // new file atomically and now explicitly refuses to replace existing data.
+    ps2asset::io::write_new_file_atomically(std::filesystem::path(path), bytes);
 }
 
 }  // namespace ps2asset::texture
