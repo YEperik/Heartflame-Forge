@@ -1,0 +1,12 @@
+@PACKAGE_INIT@
+
+include(CMakeFindDependencyMacro)
+if(@PS2ASSET_PACKAGE_NEEDS_LIBARCHIVE@)
+    find_dependency(LibArchive REQUIRED)
+endif()
+if(@PS2ASSET_PACKAGE_NEEDS_PNG@)
+    find_dependency(PNG REQUIRED)
+endif()
+
+include("${CMAKE_CURRENT_LIST_DIR}/HeartflameForgeTargets.cmake")
+check_required_components(HeartflameForge)
