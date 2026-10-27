@@ -1,6 +1,10 @@
 #include "ps2asset/text/scan.hpp"
+#include "ps2asset/io/new_file_transaction.hpp"
 
 #include <algorithm>
+#include <charconv>
+#include <system_error>
+#include <stdexcept>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
@@ -16,15 +20,17 @@ constexpr std::size_t kDefaultMinLength = 4U;
 constexpr std::size_t kDefaultMaxResults = 10000U;
 
 bool parse_size(const std::string& s, std::size_t& value) {
-    try {
-        std::size_t consumed = 0;
-        const unsigned long long parsed = std::stoull(s, &consumed, 10);
-        if (consumed != s.size() || parsed > static_cast<unsigned long long>(std::numeric_limits<std::size_t>::max())) return false;
-        value = static_cast<std::size_t>(parsed);
-        return true;
-    } catch (...) {
+    if (s.empty() || !std::all_of(s.begin(), s.end(), [](unsigned char c) { return c >= '0' && c <= '9'; })) {
         return false;
     }
+    unsigned long long parsed = 0U;
+    const auto result = std::from_chars(s.data(), s.data() + s.size(), parsed, 10);
+    if (result.ec != std::errc{} || result.ptr != s.data() + s.size() ||
+        parsed > static_cast<unsigned long long>(std::numeric_limits<std::size_t>::max())) {
+        return false;
+    }
+    value = static_cast<std::size_t>(parsed);
+    return true;
 }
 
 std::string tsv_escape(const std::string& value) {
@@ -136,29 +142,19 @@ int main(int argc, char** argv) {
     if (!hasOutput) {
         if (!write_report(std::cout, result)) return 1;
     } else {
-        const fs::path parent = outputPath.parent_path();
-        const fs::path tempPath = (parent.empty() ? fs::current_path() : parent) /
-            (outputPath.filename().string() + ".tmp.ps2asset");
-        if (fs::exists(tempPath, ec)) {
-            std::cerr << "ERROR: temporary output already exists; refusing to overwrite\n";
-            return 1;
-        }
-        {
-            std::ofstream out(tempPath, std::ios::binary | std::ios::out);
-            if (!out || !write_report(out, result)) {
-                out.close();
-                fs::remove(tempPath, ec);
-                std::cerr << "ERROR: failed to write TSV report\n";
-                return 1;
-            }
-        }
-        fs::rename(tempPath, outputPath, ec);
-        if (ec) {
-            fs::remove(tempPath, ec);
-            std::cerr << "ERROR: unable to finalize TSV report\n";
+        try {
+            ps2asset::io::write_new_file_atomically(outputPath, [&result](std::ostream& out) {
+                if (!write_report(out, result)) {
+                    throw std::runtime_error("failed to write TSV report");
+                }
+            });
+        } catch (const std::exception& ex) {
+            std::cerr << "ERROR: unable to create TSV report without overwriting existing files: "
+                      << ex.what() << '\n';
             return 1;
         }
     }
+
 
     std::cerr << "SUMMARY hits=" << result.hits.size()
               << " truncated=" << (result.truncated_by_limit ? "yes" : "no") << '\n';
