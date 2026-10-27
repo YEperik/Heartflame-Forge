@@ -1,5 +1,6 @@
 #include "ps2asset/model/containers.hpp"
 #include "ps2asset/model/inspect.hpp"
+#include "ps2asset/io/new_file_transaction.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -104,71 +105,59 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    bool success = true;
     const std::string stem = safe_stem(input_path);
     const fs::path manifest_path = output_dir / "manifest.tsv";
-    std::ofstream manifest(manifest_path, std::ios::out | std::ios::binary);
-    if (!manifest) {
-        std::cerr << "ERROR: cannot create manifest\n";
-        success = false;
-    }
-    if (manifest) {
-        manifest << "index\tfilename\tsource_offset_hex\tblock_bytes\tsl01_field08\tgap_after_bytes\n";
-    }
-
+    std::ostringstream manifest;
+    manifest << "index\tfilename\tsource_offset_hex\tblock_bytes\tsl01_field08\tgap_after_bytes\n";
+    std::vector<fs::path> created_files;
+    bool manifest_created = false;
     std::size_t written = 0;
-    for (std::size_t i = 0; success && i < scan.blocks.size(); ++i) {
-        const auto& block = scan.blocks[i];
-        const std::string filename = stem + "_sl01_" +
-            (i < 10U ? "00" : (i < 100U ? "0" : "")) + std::to_string(i) +
-            "_offset_" + hex_offset(block.offset) + ".mdl";
-        const auto begin = bytes.begin() + static_cast<std::ptrdiff_t>(block.offset);
-        const auto end = begin + static_cast<std::ptrdiff_t>(block.total_size);
-        std::vector<std::uint8_t> extracted(begin, end);
+    try {
+        for (std::size_t i = 0; i < scan.blocks.size(); ++i) {
+            const auto& block = scan.blocks[i];
+            const std::string filename = stem + "_sl01_" +
+                (i < 10U ? "00" : (i < 100U ? "0" : "")) + std::to_string(i) +
+                "_offset_" + hex_offset(block.offset) + ".mdl";
+            const auto begin = bytes.begin() + static_cast<std::ptrdiff_t>(block.offset);
+            const auto end = begin + static_cast<std::ptrdiff_t>(block.total_size);
+            std::vector<std::uint8_t> extracted(begin, end);
 
-        const auto check = ps2asset::model::inspect_model_bytes(extracted, filename);
-        if (!check.sl01_wrapped || !check.sl01_length_checked || !check.sl01_length_matches) {
-            std::cerr << "ERROR: internal size-invariant check failed for " << filename << '\n';
-            success = false;
-            break;
-        }
+            const auto check = ps2asset::model::inspect_model_bytes(extracted, filename);
+            if (!check.sl01_wrapped || !check.sl01_length_checked || !check.sl01_length_matches) {
+                throw std::runtime_error("internal size-invariant check failed for " + filename);
+            }
 
-        std::ofstream out(output_dir / filename, std::ios::out | std::ios::binary);
-        if (!out) {
-            std::cerr << "ERROR: cannot create extracted output " << filename << '\n';
-            success = false;
-            break;
-        }
-        if (!extracted.empty()) {
-            out.write(reinterpret_cast<const char*>(extracted.data()),
-                      static_cast<std::streamsize>(extracted.size()));
-        }
-        out.close();
-        if (!out) {
-            std::cerr << "ERROR: failed while writing " << filename << '\n';
-            success = false;
-            break;
-        }
+            const fs::path extracted_path = output_dir / filename;
+            ps2asset::io::write_new_file_atomically(extracted_path, extracted);
+            created_files.push_back(extracted_path);
 
-        manifest << i << '\t' << filename << '\t' << hex_offset(block.offset) << '\t'
-                 << block.total_size << '\t' << block.size_field << '\t'
-                 << block.gap_after << '\n';
-        if (!manifest) {
-            std::cerr << "ERROR: failed while writing manifest\n";
-            success = false;
-            break;
+            manifest << i << '\t' << filename << '\t' << hex_offset(block.offset) << '\t'
+                     << block.total_size << '\t' << block.size_field << '\t'
+                     << block.gap_after << '\n';
+            if (!manifest) throw std::runtime_error("failed while preparing manifest contents");
+            ++written;
         }
-        ++written;
-    }
-
-    manifest.close();
-    if (!manifest) success = false;
-
-    if (!success) {
+        ps2asset::io::write_new_file_atomically(manifest_path, [&manifest](std::ostream& out) {
+            out << manifest.str();
+            if (!out) throw std::runtime_error("failed while writing manifest");
+        });
+        manifest_created = true;
+    } catch (const std::exception& ex) {
+        std::cerr << "ERROR: extraction stopped safely: " << ex.what() << '\n';
         std::error_code cleanup_error;
-        fs::remove_all(output_dir, cleanup_error);
+        if (manifest_created) {
+            fs::remove(manifest_path, cleanup_error);
+            if (cleanup_error) std::cerr << "WARNING: could not remove created manifest: " << cleanup_error.message() << '\n';
+        }
+        for (const auto& path : created_files) {
+            cleanup_error.clear();
+            fs::remove(path, cleanup_error);
+            if (cleanup_error) std::cerr << "WARNING: could not remove created file " << path.string() << ": " << cleanup_error.message() << '\n';
+        }
+        cleanup_error.clear();
+        fs::remove(output_dir, cleanup_error); // non-recursive: never erase files another process may have added
         if (cleanup_error) {
-            std::cerr << "WARNING: could not remove incomplete output directory: "
+            std::cerr << "WARNING: output directory was left in place because it is not empty or could not be removed: "
                       << cleanup_error.message() << '\n';
         }
         return 1;
