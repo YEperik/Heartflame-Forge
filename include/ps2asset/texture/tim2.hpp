@@ -67,6 +67,7 @@ private:
 
 [[nodiscard]] std::vector<std::uint8_t> read_binary_file(const std::string& path,
                                                           std::uint64_t max_size = 1024ULL * 1024ULL * 1024ULL);
+// Creates a new file atomically. Existing output paths are never overwritten.
 void write_binary_file_atomic(const std::string& path, const std::vector<std::uint8_t>& bytes);
 
 }  // namespace ps2asset::texture
