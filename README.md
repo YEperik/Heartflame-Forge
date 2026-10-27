@@ -1,4 +1,4 @@
-# Heartflame-Forge (ps2asset-workbench)
+# Heartflame-Forge 
 
 **Version 0.8.0 — batch replacement for multiple TIM2 textures into a single output ZIP**
 
