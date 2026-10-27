@@ -1,0 +1,5 @@
+<RCC>
+  <qresource prefix="/branding">
+    <file alias="heartflame-forge.png">heartflame-forge.png</file>
+  </qresource>
+</RCC>
