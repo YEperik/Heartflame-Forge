@@ -23,6 +23,8 @@ int main() {
         assert(r.sl01_wrapped && r.sl01_length_checked && r.sl01_length_matches);
         assert(r.sl01_field04 == 0x12345678U);
         assert(r.sl01_field08 == 88U);
+        assert(r.validated_sl01_blocks == 1U);
+        assert(r.first_sl01_block_offsets.size() == 1U && r.first_sl01_block_offsets[0] == 0U);
         assert(r.markers.size() == 2U);
         assert(r.markers[0].marker == "MDHD" && r.markers[0].count == 1U);
         assert(r.markers[0].first_offsets.front() == 20U);
@@ -34,6 +36,7 @@ int main() {
         bytes[8] = 99U;
         const auto r = ps2asset::model::inspect_model_bytes(bytes, "broken.mdl");
         assert(r.sl01_length_checked && !r.sl01_length_matches);
+        assert(r.validated_sl01_blocks == 0U);
         assert(!r.warnings.empty());
         assert(ps2asset::model::format_model_report(r).find("MISMATCH") != std::string::npos);
     }
