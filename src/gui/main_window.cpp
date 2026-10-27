@@ -218,7 +218,7 @@ void MainWindow::buildUi() {
     connect(binaryAction, &QAction::triggered, this, [this]() { selectModule(BinaryModule); });
     connect(aboutAction, &QAction::triggered, this, [this]() {
         QMessageBox::about(this, QStringLiteral("Tentang PS2 Asset Workbench"),
-            QStringLiteral("<b>PS2 Asset Workbench 0.9.0</b><br>Desktop workbench C++17/CMake untuk eksplorasi aset game PS2.<br><br>Modul tersedia: Texture Workshop, Archive Browser dengan batch ZIP replacement, Binary Inspector, dan profiler read-only kandidat model .mdl.<br>Import TIM2 dibatasi pada profil indexed 8-bit + CLUT RGBA32 yang telah divalidasi dari sampel.<br><br>Profiler MDL melaporkan marker byte dan kandidat string path; belum mendekode mesh, material, skeleton, atau animasi."));
+            QStringLiteral("<b>PS2 Asset Workbench 1.0.0</b><br>Desktop workbench C++17/CMake untuk eksplorasi aset game PS2.<br><br>Modul tersedia: Texture Workshop, Archive Browser dengan batch ZIP replacement, Binary Inspector, dan profiler read-only kandidat model .mdl.<br>Import TIM2 dibatasi pada profil indexed 8-bit + CLUT RGBA32 yang telah divalidasi dari sampel.<br><br>Profiler MDL melaporkan marker byte, kandidat string path, serta rentang SL01 yang lolos pemeriksaan batas. CLI terpisah dapat mengekstrak rentang tersebut dengan manifest; mesh, material, skeleton, dan animasi belum didekode."));
     });
 
     auto* root = new QWidget(this);
