@@ -13,7 +13,7 @@ int main(int argc, char* argv[]) {
     QApplication app(argc, argv);
     QApplication::setApplicationName("PS2 Asset Workbench");
     QApplication::setOrganizationName("PS2AssetWorkbench");
-    QApplication::setApplicationVersion("0.9.0");
+    QApplication::setApplicationVersion("1.0.0");
 
     if (QStyle* style = QStyleFactory::create("Fusion")) {
         QApplication::setStyle(style);
