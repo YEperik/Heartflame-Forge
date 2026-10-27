@@ -1,17 +1,19 @@
 #include "main_window.hpp"
 
 #include <QApplication>
+#include <QAction>
 #include <QListWidget>
 #include <QStackedWidget>
 #include <QStyleFactory>
 #include <QDebug>
 #include <QListWidgetItem>
+#include <QPlainTextEdit>
 
 int main(int argc, char* argv[]) {
     QApplication app(argc, argv);
     QApplication::setApplicationName("PS2 Asset Workbench");
     QApplication::setOrganizationName("PS2AssetWorkbench");
-    QApplication::setApplicationVersion("0.3.0");
+    QApplication::setApplicationVersion("0.9.0");
 
     if (QStyle* style = QStyleFactory::create("Fusion")) {
         QApplication::setStyle(style);
@@ -24,6 +26,16 @@ int main(int argc, char* argv[]) {
         if (navigation == nullptr || stack == nullptr || navigation->count() != stack->count() || navigation->count() < 7) {
             qCritical("GUI startup smoke test failed: module navigation and page stack are inconsistent.");
             return 2;
+        }
+        const auto* saveZipAction = window.findChild<QAction*>(QStringLiteral("saveZipAction"));
+        if (saveZipAction == nullptr || saveZipAction->isEnabled()) {
+            qCritical("GUI startup smoke test failed: save-to-new-ZIP action missing or incorrectly enabled without a selected edit.");
+            return 4;
+        }
+        const auto* modelReport = window.findChild<QPlainTextEdit*>(QStringLiteral("modelInspectionReport"));
+        if (modelReport == nullptr || !modelReport->isReadOnly()) {
+            qCritical("GUI startup smoke test failed: read-only model report panel missing.");
+            return 5;
         }
 #ifdef PS2ASSET_EXPECT_SAMPLE_PLUGIN
         bool foundSamplePlugin = false;
