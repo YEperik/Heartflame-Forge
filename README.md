@@ -1,194 +1,203 @@
-# Heartflame-Forge 
+<div align="center">
+  <img src="assets/heartflame-forge.svg" alt="Heartflame Forge logo" width="132" />
 
-**Version 0.8.0 — batch replacement for multiple TIM2 textures into a single output ZIP**
+  # Heartflame Forge
 
-Heartflame-Forge is a C++17/CMake application designed for the inspection and modding of PlayStation 2 assets. The core parser is intentionally independent of Qt, allowing it to be utilized by desktop UIs, CLIs, automated tests, or other tools.
+  **A modular desktop workshop for game-asset inspection and modding research.**
 
-## Changes in v0.8.0
+  *Inspect carefully. Edit conservatively. Keep the originals safe.*
 
-- The `replace_zip_entries_bytes()` API replaces multiple regular entries within a single ZIP repacking process.
-- The `replace-zip-entries` CLI reads a TSV manifest (`entry-path<TAB>file-tm2`) and validates all inputs as TIM2 files before generating the output.
-- Texture Workshop bundles all edited TIM2 documents—originating from the same source archive—into a single output ZIP file.
-- Duplicate target paths are rejected; each target must appear exactly once and must be a regular file. Default payload limits are 32 MiB per entry and 256 MiB in total.
-- If any entry is missing or an operation fails, the destination ZIP file is not left in a partial or corrupted state. The source archive remains untouched.
+  ![C++17](https://img.shields.io/badge/C%2B%2B-17-00599C?logo=cplusplus&logoColor=white)
+  ![Qt 6](https://img.shields.io/badge/GUI-Qt%206-41CD52?logo=qt&logoColor=white)
+  ![Windows](https://img.shields.io/badge/Target-Windows%2010%2F11%20x64-0078D4?logo=windows11&logoColor=white)
+  ![License](https://img.shields.io/badge/License-MIT-2E8B57.svg)
 
-## Changes in v0.7.0
-- Added an initial GUI workflow, **Save changes to a new ZIP…**, to replace a single TIM2 entry within an output ZIP file.
-- Any document opened from a ZIP file retains the path to its source archive and its original entry name.
-- TIM2 files are re-validated prior to writing; the original output is discarded, and the target entry is verified after repacking. The source ZIP file is not overwritten.
-- As of v0.8.0, this initial functionality has been expanded to support batch replacement, allowing all textures edited from the same session archive to be saved into a single output ZIP file.
+  **Version 1.3.0 · Windows-first · Local asset processing**
 
-## Changes in v0.5.0
+  [Bahasa Indonesia](README.id.md) · [English](README.md)
+</div>
 
-- Added an optional `ps2asset_png` library, based on libpng, for encoding/decoding RGBA8 PNG files (with a 64-megapixel limit and a 512 MiB file size limit).
-- The `ps2asset-texture export-png` CLI command exports textures as transparent PNGs; `replace-png` imports a PNG and saves the resulting TIM2 to a new file. The replacement command prevents overwriting existing destination files.
-- `ps2asset-texture-validate --png-roundtrip <input.tm2|archive.zip>` performs a full round-trip check: decode → PNG encode/decode → replace → re-parse → decode (all in memory).
-- PNG integration testing on 61 original textures yielded a 61/61 success rate; the original input files remained unchanged.
-- Added tests for PNG encoding/decoding, handling of malformed PNGs, and TIM2 replacement using PNG-derived data.
+---
 
-## Changes in v0.4.0
+## Overview
 
-- Added `ps2asset-texture-validate`, a read-only validation tool for individual TIM2 files or ZIP archives containing `.tm2` files.
-- The validator replaces textures using synthetic patterns in memory, ensuring the file size remains constant, verifying that bytes outside the target payload are unaltered, and subsequently re-parsing and decoding the result. The input files are not modified. - Added a self-test validator to CTest so that the pipeline replacement can be automatically tested without requiring game assets to be distributed as fixtures.
-- Using the original samples available during development, the validator passed for 61 out of 61 textures. These results confirm the integrity of the round-trip process within the parser’s representation, rather than the compatibility of the game or emulator runtime.
+**Heartflame Forge** is a C++17/Qt Widgets workbench for exploring game-asset containers and building format-specific modding tools. The application is organized into separate workspaces, with a C++ core that can be used independently of the GUI.
 
-## Workspace GUI
+The project favors conservative handling: unsupported layouts are reported instead of guessed, edited files are written to new destinations, and the source archive is kept unchanged during the tested replacement flows.
 
-- **Overview** — status of currently opened assets, module shortcuts, and notes on supported formats.
-- **Texture Workshop** — open individual `.tm2` files or `.zip` archives; features include an image list, transparency preview, metadata display, PNG export, importing/replacing from standard image files, saving edited `.tm2` files, and a **"Save all modified textures to a new ZIP..."** action to package all modified assets from the original archive.
-- **Archive Browser** — a read-only index of ZIP entry metadata, including a table of paths, types, and sizes; supports path filtering and allows passing `.tm2` entries to the Texture Workshop. Edits made to documents originating from a ZIP can be packaged into a new output ZIP via the Texture menu.
-- **Binary Inspector** — provides read-only inspection of signatures/headers, details on recognized formats, a hex dump of the first 8 KiB, and ASCII string searching within loaded files (up to 64 MiB).
-- **3D Models & Animation**, **Audio & Video**, and **Scripts & Text** — workspaces within the UI shell reserved for future implementation. These pages are explicitly marked as not yet having active format parsers/decoders.
-- **Diagnostics / Activity Log** — displays asset operations, extension loading results, and relevant errors. This panel can be accessed via the View menu.
-- **Extension Modules** — dynamic Qt plugins can add new workspace pages without modifying the main shell. A sample plugin is built by default, provided that Qt Widgets are available.
+> **Important:** This is an evolving research workbench, not a universal game-file editor. A file being recognized by its extension or header does not mean its contents are fully decoded, editable, or safe to rebuild.
 
-## Texture Module: Current Limitations
+## Windows downloads
 
-Importing/replacing is permitted only for validated TIM2 profiles: 8-bit indexed, 256-color RGBA32 CLUT, single mip level, 48-byte image header, and a fixed-size buffer. The dimensions of imported images can be adjusted upon confirmation. The palette/index plane is replaced without altering the container size. Edited output **does not automatically overwrite the source file**. For ZIP sources, users can either store standalone `.tm2` files or create a new ZIP archive that replaces all original entries from the TIM2 documents edited during the session. This repackaging preserves entry paths and metadata—to the extent supported by `libarchive`—though the compressed byte streams within the archive will not necessarily be identical to the original source.
+The project contains a Windows x64 release workflow that builds the Qt desktop app, runs tests, packages Qt runtime files, creates a portable ZIP and an installer, and generates SHA-256 checksums.
 
-An audit of the user-provided sample archive identified 61 `.tm2` files; all 61 were successfully parsed/decoded and met the criteria for replacement. These findings apply only to the specific samples examined, not to all TIM2 files or all games.
+**This source package does not include a prebuilt Windows `.exe`.** A Windows binary becomes available only after this source is pushed to a GitHub repository and the Windows workflow completes successfully. On a repository page, open **Actions → Heartflame Forge — Windows** to run or inspect the workflow. For a tagged release such as `v1.3.0`, the workflow is configured to publish its artifacts as a GitHub Release.
 
-## Build prerequisites
+| Package | Intended use |
+| --- | --- |
+| `HeartflameForge-Setup-x64-v1.3.0.exe` | Guided installation, Start Menu shortcut, and uninstall entry. The installer can install the Microsoft Visual C++ runtime prerequisite. |
+| `HeartflameForge-Portable-x64-v1.3.0.zip` | Extract to a folder you control and run without an application install step. Keep the entire folder together. |
+| `SHA256SUMS.txt` | Integrity checks for files from the same release. |
 
-- CMake 3.16+
-- C++17-compliant compiler (GCC, Clang, or MSVC)
-- Qt 6 Widgets or Qt 5.12+ Widgets (for the GUI)
-- `libarchive` development package (optional during configuration; required for ZIP functionality in the GUI)
-- `libpng` development package (optional; used for CLI PNG commands and the PNG round-trip validator—the GUI utilizes Qt’s built-in codecs instead)
+### Install and start (Windows)
 
-Example packages for Ubuntu/Debian:
-```sh
-sudo apt-get update
-sudo apt-get install --yes build-essential cmake qt6-base-dev libarchive-dev libpng-dev
+**Installer (recommended)**
+
+1. Download the installer and `SHA256SUMS.txt` from the same trusted release page.
+2. Verify the installer hash against `SHA256SUMS.txt` before running it.
+3. Run `HeartflameForge-Setup-x64-v1.3.0.exe`. Windows may ask for permission because the installer writes to Program Files and may install the Microsoft runtime.
+4. Start **Heartflame Forge** from the Start Menu. Uninstall it through **Settings → Apps → Installed apps**.
+
+**Portable ZIP**
+
+1. Verify the ZIP hash using `SHA256SUMS.txt`.
+2. Extract the complete ZIP to a new folder, for example `%LOCALAPPDATA%\Programs\Heartflame Forge Portable`.
+3. Keep `HeartflameForge.exe`, Qt DLLs, `platforms`, `plugins`, and helper tools in their original relative locations.
+4. Double-click `RUN-HEARTFLAME-FORGE.bat` or `HeartflameForge.exe`.
+5. If Windows reports a missing `VCRUNTIME` or `MSVCP` DLL, run `INSTALL-VC-RUNTIME.bat`, finish the Microsoft installer, and start the app again.
+
+**Security note:** release binaries are currently not signed with a project publisher certificate. Do not bypass an unexpected Windows security warning. Verify the checksum and only use builds from a source you trust.
+
+## Feature map and current limits
+
+| Workspace | Available now | Still under research |
+| --- | --- | --- |
+| **Texture Workshop** | Inspect TIM2 metadata; preview supported images; import/export PNG; save replacement to a new file/ZIP for validated profiles. | PSM=0 image layout and other TIM2 variants; swizzle/CLUT order and runtime appearance need further proof. |
+| **Archive Browser** | List ZIP entries, filter paths, inspect metadata, and pass supported TIM2 files to Texture Workshop. | Containers other than the ZIP paths currently implemented. |
+| **Binary Inspector** | Read-only header/signature report, bounded hex view, and string search. | Full schemas for unknown container formats. |
+| **Model Inspector** | Read-only `.mdl`/`SL01` marker and bounded-range profiling. | Mesh topology, vertex/index buffers, UVs, materials, transforms, and skeleton. |
+| **Model Export — GLB** | Optional Assimp-based export for formats Assimp can import. | The game's custom `.mdl` geometry is **not** automatically understood by Assimp; a game-specific decoder is still required. |
+| **Animation Inspector** | Header/container reconnaissance. | Skeleton tracks, keyframes, timing, interpolation, and animation writer. |
+| **Audio Inspector** | WAV/RIFF metadata and SDPK/ADSC signature inspection. | Proprietary audio decoding, playback, loop metadata, and replacement. |
+| **Video / Stream Inspector** | PSS-like header/signature inspection. | In-app stream demux, timestamps, playback/editing pipeline. |
+| **Text & Script Inspector** | Read-only ASCII and limited UTF-16LE ASCII-subset string scanning; CLI TSV reports. | Game control codes, Shift-JIS, pointer tables, compression, bytecode, and rebuild logic. |
+| **Extensions** | Qt dynamic plugin interface and a sample extension. | Third-party plugin trust, compatibility policy, and a signed plugin ecosystem. |
+
+### Known TIM2 profile limitation
+
+The sample corpus audited during development contains 61 TIM2 files. Sixty match the currently validated replacement profile; `tv_mahou_016.tm2` reports PSM=0 and is intentionally excluded from pixel decoding/replacement until its layout is demonstrated. This is a result for that sample set, not a statement about every TIM2 file or every game.
+
+## Build from source on Windows
+
+### Requirements
+
+- Windows 10/11 x64.
+- Visual Studio 2022 with **Desktop development with C++** and Windows SDK.
+- CMake 3.21+, Git, and PowerShell.
+- Qt 6 Widgets for MSVC 2022 x64.
+- vcpkg dependencies: libarchive, libpng, and Assimp.
+
+The reproducible Windows build uses the custom `x64-windows-static-md` triplet in `triplets/`. This triplet builds third-party libraries statically while using the dynamic MSVC runtime expected by the Qt MSVC binaries.
+
+Open **Developer PowerShell for VS 2022** at the repository root and set the real locations of Qt and vcpkg:
+
+```powershell
+$env:VCPKG_ROOT = "C:\vcpkg"
+$env:QT_ROOT_DIR = "C:\Qt\6.8.3\msvc2022_64"
+
+& "$env:VCPKG_ROOT\vcpkg.exe" install `
+  --triplet x64-windows-static-md `
+  "--overlay-triplets=$PWD\triplets"
+
+cmake -S . -B build-win `
+  -G "Visual Studio 17 2022" -A x64 `
+  "-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_ROOT\scripts\buildsystems\vcpkg.cmake" `
+  -DVCPKG_TARGET_TRIPLET=x64-windows-static-md `
+  "-DVCPKG_OVERLAY_TRIPLETS=$PWD\triplets" `
+  "-DVCPKG_INSTALLED_DIR=$PWD\vcpkg_installed" `
+  "-DCMAKE_PREFIX_PATH=$env:QT_ROOT_DIR" `
+  -DPS2ASSET_BUILD_GUI=ON `
+  -DPS2ASSET_REQUIRE_GUI=ON `
+  -DPS2ASSET_BUILD_SAMPLE_PLUGIN=ON
+
+cmake --build build-win --config Release --parallel 2
+$env:QT_QPA_PLATFORM = "offscreen"
+ctest --test-dir build-win -C Release --output-on-failure
+& .\build-win\Release\HeartflameForge.exe --smoke-test
 ```
 
-For Windows, install Visual Studio 2022 with the C++ Desktop workload, CMake, Qt 6 Widgets (via the Qt installer or Qt VS Tools), and a version of libarchive compatible with your toolchain. For macOS, install the compiler from Xcode Command Line Tools, along with CMake, Qt 6, and libarchive via a package manager.
+The GUI smoke test must exit with code `0`. It checks startup/layout, navigation/page count consistency, the read-only model report, the initially disabled ZIP-save action, and discovery of the sample extension.
 
-If the Qt development files are unavailable, the core, CLI, and test targets can still be built, while the GUI target will be skipped (with a corresponding message from CMake). To include the GUI and sample plugins, the Qt development package is required.
+Launch the desktop app interactively with:
 
-### Linux/macOS/Windows via CMake
+```powershell
+& .\build-win\Release\HeartflameForge.exe
+```
 
-```sh
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build --config Release
+The official Windows workflow additionally runs `windeployqt`, includes dependency notices, verifies the Microsoft-signed VC++ runtime download, and produces the portable ZIP, Inno Setup installer, and SHA-256 checksums. See [`docs/WINDOWS_INSTALL_AND_BUILD.md`](docs/WINDOWS_INSTALL_AND_BUILD.md) for troubleshooting and local packaging details.
+
+## Build and test on Linux
+
+A headless core/CLI build does not prove the GUI compiles. Install Qt Widgets development headers and set `PS2ASSET_REQUIRE_GUI=ON` when validating a GUI build.
+
+```bash
+cmake -S . -B build \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DPS2ASSET_BUILD_GUI=OFF
+cmake --build build --parallel 2
 ctest --test-dir build --output-on-failure
 ```
 
-Headless build (without GUI):
-
-```sh
-cmake -S . -B build-headless -DPS2ASSET_BUILD_GUI=OFF -DCMAKE_BUILD_TYPE=Release
-cmake --build build-headless --config Release
-ctest --test-dir build-headless --output-on-failure
-```
-
-CMake Presets (CMake 3.21+):
-
-```sh
-cmake --preset release
-cmake --build --preset release
-ctest --preset release
-```
-
-If Qt Widgets are available, the `ps2asset-workbench` desktop executable will be created. When sample plugins are enabled (the default setting), the extension libraries are placed in `build/plugins/`, alongside the executable.
-
-### GUI startup smoke test
-
-In an environment with a full Qt installation:
-
-```sh
-# Linux without a display server
-QT_QPA_PLATFORM=offscreen ./build/ps2asset-workbench --smoke-test
-```
-
-The smoke test verifies the consistency of the navigation/page stack and ensures that sample plugins load correctly (if that option is enabled). ### CLI
-
-```sh
-# General header report
-./build/ps2asset-inspect path/to/file.tm2
-
-# TIM2 metadata and import/replace support
-./build/ps2asset-texture info path/to/texture.tm2
-
-# Export diagnostics to PPM or transparent PNG
-./build/ps2asset-texture export path/to/texture.tm2 0 output.ppm
-./build/ps2asset-texture export-png path/to/texture.tm2 0 output.png
-
-# Replace a texture from a PNG and write a new TIM2 file (the destination file must not already exist)
-./build/ps2asset-texture replace-png path/to/texture.tm2 0 replacement.png replaced.tm2
-# Round-trip synthetic and PNG validators; the entire test runs in memory
-./build/ps2asset-texture-validate path/to/texture.tm2
-./build/ps2asset-texture-validate path/to/assets.zip
-./build/ps2asset-texture-validate --png-roundtrip path/to/texture.tm2
-./build/ps2asset-texture-validate --png-roundtrip path/to/assets.zip
-./build/ps2asset-texture-validate --self-test
-```
-
-## Project structure
-
-```text
-include/ps2asset/ API core (inspection, archive, TIM2)
-include/ps2asset/workbench/ public Qt plugin interface v1.0
-src/inspect.cpp signature/header inspection
-src/texture/tim2.cpp TIM2 parse/decode/replace
-src/image/png.cpp optional libpng RGBA8 codec
-src/archive/zip_reader.cpp ZIP entry listing and TIM2 extraction via libarchive
-src/gui/main_window.* desktop shell and workspaces
-src/gui/plugin_manager.* dynamic module discovery/lifetime
-src/gui/plugins/sample_plugin.cpp sample plugin for CI/smoke test
-src/main.cpp CLI header inspection
-src/texture_cli.cpp CLI texture diagnostics
-tools/validate_textures.cpp end-to-end TIM2 replacement validator
-plugins/README.md extension authoring notes
-tests/ core and ZIP metadata unit tests
-.github/workflows/ci.yml Qt GUI build, plugin build, test, smoke test
-```
-
-## API Extensions
-
-Public interface: `include/ps2asset/workbench/plugin_interface.hpp`.
-
-- IID: `org.ps2asset.workbench.IWorkbenchPlugin/1.0`
-- Implement `id()`, `displayName()`, `description()`, and `createWidget(QWidget*)`.
-- Export the implementation with Qt's `Q_PLUGIN_METADATA` and `Q_INTERFACES`.
-- Drop compatible plugin library into `plugins/` beside the executable or the Qt application-data `plugins/` folder.
-- Each plugin ID must be unique. Invalid or incompatible extensions are skipped and logged; they must not stop application startup.
-
-Plugin code is native code and should be installed only from trusted sources. Public API compatibility is versioned through the IID; incompatible interface changes require a new IID.
-
-## Safety and known limitations
-
-1. Compatibility of generated TIM2 output in the game or emulator has not yet been confirmed.
-2. Import rejects TIM2 profiles outside the current indexed-8 + RGBA32 CLUT profile rather than guessing.
-3. TIM2 CLUT/texture swizzle variations outside the tested sample are not implemented.
-4. GUI ZIP replacement is wired into the source but needs compile/runtime verification on a host with Qt development headers.
-5. GUI/plugin compilation and PNG interaction tests remain pending on a host with Qt development headers.
-6. Model, audio, video, and script pages are UI scaffolding only; no full proprietary decoder/writer is claimed.
-7. Binary Inspector is read-only and limits a loaded file to 64 MiB; its hex preview shows 8 KiB, while ASCII search scans the loaded bytes.
-
-## Tests and CI
-
-Headless tests cover header/signature inspection, TIM2 decode/replacement, ZIP listing, and a synthetic end-to-end replacement → reparse → decode round-trip. The `ps2asset-texture-validate` utility was also run against the supplied sample ZIP during development: 61/61 TIM2 files passed the in-memory replacement + reparse/decode validation, with no failures and no input files written. With Qt installed, CI also builds the GUI and sample plugin and runs `--smoke-test` in Qt offscreen mode. The current local environment lacks Qt development headers, so GUI/plugin build and GUI dialogs remain pending Qt-enabled CI/desktop validation. The independent libpng encoder/decoder, CLI PNG export/replacement, and PNG replacement/reparse round-trip passed locally (61/61 real sample textures).
-
-## ZIP replacement (v0.6.0+)
-
-With libarchive enabled, replace one entry or batch-replace several entries while keeping the source archive untouched. The output ZIP must not already exist.
+For the full GUI smoke test on a Qt-enabled Linux machine:
 
 ```bash
-# One entry
-ps2asset-texture replace-zip-entry input.zip path/inside/archive.tm2 replacement.tm2 output.zip
-
-# Multiple entries from a tab-separated manifest
-ps2asset-texture replace-zip-entries input.zip replacements.tsv output.zip
+cmake -S . -B build-gui \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DPS2ASSET_BUILD_GUI=ON \
+  -DPS2ASSET_REQUIRE_GUI=ON
+cmake --build build-gui --parallel 2
+QT_QPA_PLATFORM=offscreen ctest --test-dir build-gui --output-on-failure
+QT_QPA_PLATFORM=offscreen ./build-gui/HeartflameForge --smoke-test
 ```
 
-Each `replacements.tsv` row contains the exact ZIP entry path, one literal tab character, then a TIM2 replacement file path. Relative replacement paths are resolved against the manifest directory. Blank lines and comment lines starting with `#` are ignored. For example, the two columns below must be separated by an actual tab:
+## Privacy, modder safety, and safe file handling
+
+- **Local-first:** the current application does not implement accounts, cloud sync, telemetry, or automatic update checks. Asset inspection and replacement are performed locally. Build/release workflows do download development dependencies on the build runner.
+- **Keep originals:** use a copy of your own files, back up the source archive, and write edits to new output paths. Never rely on an unsupported profile being safe to rewrite.
+- **Minimize public traces:** do not post original game asset dumps, save data, private test archives, usernames, absolute home paths, local drive labels, or unredacted logs/screenshots in issues or discussions.
+- **Native plugins are code:** a plugin DLL can execute arbitrary code in your user account. Use only extensions you have reviewed and trust; the sample extension is a development example, not a sandbox.
+- **Verify releases:** compare SHA-256 with the checksum file from the same trusted release. A checksum verifies file integrity, not the publisher's identity.
+- **Private notes stay private:** put personal test notes in a local `private/` directory. That directory is git-ignored and intentionally excluded from release packaging. Copy the [blank modder privacy checklist](docs/MODDER_PRIVATE_CHECKLIST_TEMPLATE.md) into `private/`; fill in only the private copy. Never put credentials, game dumps, or personal data into public Markdown.
+- **Respect ownership and rules:** use only files you are allowed to inspect/mod, retain your original backups, and check the applicable game/platform terms before distributing modified assets.
+
+Read [`docs/PRIVACY_AND_MODDER_SAFETY.md`](docs/PRIVACY_AND_MODDER_SAFETY.md) and [`SECURITY.md`](SECURITY.md) before sharing a reproduction or third-party extension.
+
+## Project layout
 
 ```text
-dataimg/effect/a.tm2<TAB>edited_a.tm2
-dataimg/effect/b.tm2<TAB>edited_b.tm2
+assets/                       Brand SVG/PNG/ICO and Qt resource collection
+src/gui/                      Qt desktop shell and modular workspaces
+src/gui/modules/              One source module per asset feature
+src/audio, src/model,         Format-specific core logic
+src/text, src/texture,
+src/archive, src/image/
+include/ps2asset/             Public C++ core/plugin headers
+plugins/                      Extension developer notes
+packaging/windows/            Windows portable scripts and Inno Setup source
+triplets/                     Reproducible vcpkg triplet
+cmake/                        CMake config, exported package and Windows resource
+.github/workflows/            Linux and Windows CI/release pipelines
+docs/                         Architecture, format research, and user guides
+tests/                        Synthetic fixtures and regression tests
 ```
 
-Each replacement is parsed as a TIM2 file before the ZIP writer executes. Default limits are 32 MiB per entry and 256 MiB for the total size of all replacements. Target paths must be unique, and each target must correspond to exactly one regular file within the source archive. Unmodified entries are processed via `libarchive`; metadata is preserved wherever the library exposes it, though the ZIP-compressed byte stream is rebuilt and will not necessarily be byte-for-byte identical to the original. Always maintain a backup and test the result within the target game or emulator.
+## Documentation
 
-Version 0.8.0 introduces a GUI action, **Save all modified textures to a new ZIP…**, within the Texture Workshop. All edited TIM2 files originating from the same source archive are validated and packaged into a single output ZIP file. Existing target paths are rejected, and all target entries undergo verification. The build process and GUI dialogs currently require validation on a host system equipped with Qt development headers.
+- [Windows install/build guide](docs/WINDOWS_INSTALL_AND_BUILD.md)
+- [Windows release build status and verification limits](docs/WINDOWS_RELEASE_STATUS_v1.3.0.md)
+- [Privacy and modder safety](docs/PRIVACY_AND_MODDER_SAFETY.md)
+- [Blank private modder checklist template](docs/MODDER_PRIVATE_CHECKLIST_TEMPLATE.md)
+- [Security reporting policy](SECURITY.md)
+- [Module architecture](docs/MODULE_ARCHITECTURE_v1.1.0.md)
+- [Format research backlog](docs/FORMAT_RESEARCH_BACKLOG_v1.1.0.md)
+- [Extension API](docs/EXTENSION_API.md)
+- [Third-party GUI/library review](docs/THIRD_PARTY_GUI_AND_LIBRARIES.md)
+- [Third-party notices and licensing](THIRD_PARTY_NOTICES.md)
+
+## Contributing
+
+Keep changes scoped by module, add a regression test for every parser or file-writing bug, and document unverified format assumptions. Do not commit proprietary game assets, private notes, personal identifiers, credentials, build output, or generated release binaries. For a pull request, include the build configuration and test result without attaching files you do not have permission to redistribute.
+
+## License
+
+The original Heartflame Forge project source is distributed under the MIT License; see [`LICENSE`](LICENSE). Third-party libraries and the bundled Microsoft runtime remain subject to their own license terms and notices in [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) and `THIRD_PARTY_LICENSES/` in a packaged Windows release.
