@@ -41,6 +41,7 @@ std::vector<std::uint8_t> fixture_tm2(std::uint16_t width = 4U, std::uint16_t he
     bytes[file_header + 19U] = 5U;
     put_u16(bytes, file_header + 20U, static_cast<std::uint16_t>(width));
     put_u16(bytes, file_header + 22U, static_cast<std::uint16_t>(height));
+    put_u32(bytes, file_header + 24U, 19U << 20U); // validated PSMT8 profile
     const std::size_t image_offset = file_header + picture_header;
     for (std::size_t i = 0; i < image_size; ++i) bytes[image_offset + i] = static_cast<std::uint8_t>(i % 4U);
     const std::size_t palette_offset = image_offset + image_size;
