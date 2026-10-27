@@ -68,7 +68,8 @@ InspectionResult inspect_header(const std::vector<std::uint8_t>& b,
     if (starts_with(b, {'T', 'I', 'M', '2'})) {
         r.format = "TIM2 texture";
         if (b.size() >= 8) {
-            r.details.emplace_back("version=" + std::to_string(u16le(b, 4)));
+            r.details.emplace_back("version=" + std::to_string(static_cast<unsigned int>(b[4])));
+            r.details.emplace_back("format_type=" + std::to_string(static_cast<unsigned int>(b[5])));
             r.details.emplace_back("picture_count=" + std::to_string(u16le(b, 6)));
         } else {
             r.details.emplace_back("truncated: TIM2 header shorter than 8 bytes");
@@ -104,6 +105,12 @@ InspectionResult inspect_header(const std::vector<std::uint8_t>& b,
     if (starts_with(b, {'S', 'D', 'P', 'K'})) {
         r.format = "SDPK audio/resource (internals not decoded)";
         r.details.emplace_back("signature SDPK");
+        if (b.size() >= 40U) {
+            const std::string marker(reinterpret_cast<const char*>(b.data() + 32U), 8U);
+            if (std::all_of(marker.begin(), marker.end(), [](unsigned char c) { return c >= 0x20U && c <= 0x7EU; })) {
+                r.details.emplace_back("raw bytes@0x20=" + marker + " (observed marker; semantics unknown)");
+            }
+        }
         return r;
     }
 
@@ -116,6 +123,18 @@ InspectionResult inspect_header(const std::vector<std::uint8_t>& b,
                                    std::string(1, static_cast<char>(b[9])) +
                                    std::string(1, static_cast<char>(b[10])) +
                                    std::string(1, static_cast<char>(b[11])));
+        }
+        if (b.size() >= 16U) {
+            r.details.emplace_back("raw field@0x0C=" + std::to_string(u32le(b, 12U)));
+        }
+        if (b.size() >= 48U && b[40U] == 'S' && b[41U] == 'S' && b[42U] == 'b' && b[43U] == 'd') {
+            const auto raw_size = u32le(b, 44U);
+            r.details.emplace_back("second chunk tag=SSbd at 0x28");
+            r.details.emplace_back("raw field@0x2C=" + std::to_string(raw_size) + " (semantics unknown)");
+            if (full_size >= raw_size) {
+                r.details.emplace_back("file_size minus raw field@0x2C=" +
+                    std::to_string(full_size - raw_size) + " (arithmetic only; not a decoded payload length)");
+            }
         }
         return r;
     }
