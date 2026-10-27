@@ -37,6 +37,8 @@ std::string fourcc(const std::vector<std::uint8_t>& bytes, std::size_t offset) {
     return result;
 }
 
+constexpr std::size_t kMaxWaveChunks = 65536U;
+
 const char* format_name(std::uint16_t tag) {
     switch (tag) {
     case 1U: return "PCM";
@@ -63,6 +65,8 @@ WavInspection inspect_wav_bytes(const std::vector<std::uint8_t>& bytes) {
     }
     const std::size_t riff_end = static_cast<std::size_t>(riff_end64);
     std::size_t offset = 12U;
+    bool format_seen = false;
+    std::vector<std::uint64_t> data_chunk_sizes;
     while (offset < riff_end) {
         if (riff_end - offset < 8U) {
             result.error = "truncated chunk header at offset " + std::to_string(offset);
@@ -76,9 +80,17 @@ WavInspection inspect_wav_bytes(const std::vector<std::uint8_t>& bytes) {
             result.error = "chunk " + id + " payload exceeds RIFF bounds";
             return result;
         }
+        if (result.chunks.size() >= kMaxWaveChunks) {
+            result.error = "RIFF chunk count exceeds safety limit of " + std::to_string(kMaxWaveChunks);
+            return result;
+        }
         result.chunks.push_back(WavChunkInfo{id, static_cast<std::uint64_t>(offset), payload_size});
 
         if (id == "fmt ") {
+            if (format_seen) {
+                result.error = "duplicate fmt chunk is ambiguous and rejected";
+                return result;
+            }
             if (payload_size < 16U) {
                 result.error = "fmt chunk is shorter than the 16-byte base WAVEFORMAT structure";
                 return result;
@@ -93,10 +105,43 @@ WavInspection inspect_wav_bytes(const std::vector<std::uint8_t>& bytes) {
                 result.error = "fmt chunk contains zero channel/sample-rate/block-align field";
                 return result;
             }
+            if (result.format_tag == 0xFFFEU) {
+                if (payload_size < 40U) {
+                    result.error = "WAVE_FORMAT_EXTENSIBLE fmt chunk must be at least 40 bytes";
+                    return result;
+                }
+                const std::uint16_t extension_size = u16le(bytes, payload_offset + 16U);
+                if (extension_size < 22U || static_cast<std::uint64_t>(extension_size) + 18U > payload_size) {
+                    result.error = "WAVE_FORMAT_EXTENSIBLE cbSize is invalid for the fmt chunk length";
+                    return result;
+                }
+            }
+            std::uint32_t effective_tag = result.format_tag;
+            if (result.format_tag == 0xFFFEU) {
+                // KSDATAFORMAT_SUBTYPE_* stores Data1 as a full little-endian DWORD.
+                // Require the complete field to match PCM/float, not just its low word.
+                effective_tag = u32le(bytes, payload_offset + 24U);
+            }
+            if (effective_tag == 1U || effective_tag == 3U) {
+                if (result.bits_per_sample == 0U || (result.bits_per_sample % 8U) != 0U) {
+                    result.error = "PCM/IEEE-float bits per sample must be a non-zero multiple of 8";
+                    return result;
+                }
+                const std::uint64_t expected_align = static_cast<std::uint64_t>(result.channels) *
+                    static_cast<std::uint64_t>(result.bits_per_sample / 8U);
+                const std::uint64_t expected_rate = static_cast<std::uint64_t>(result.sample_rate) *
+                    static_cast<std::uint64_t>(result.block_align);
+                if (expected_align != result.block_align || expected_rate != result.byte_rate) {
+                    result.error = "PCM/IEEE-float block_align or byte_rate is inconsistent with channels, rate, and bit depth";
+                    return result;
+                }
+            }
+            format_seen = true;
             result.has_format_chunk = true;
         } else if (id == "data") {
             result.has_data_chunk = true;
             result.data_bytes += payload_size;
+            data_chunk_sizes.push_back(payload_size);
             if (result.data_offset == 0U) result.data_offset = static_cast<std::uint64_t>(payload_offset);
         }
 
@@ -116,6 +161,25 @@ WavInspection inspect_wav_bytes(const std::vector<std::uint8_t>& bytes) {
         result.error = std::string("missing required ") +
                        (!result.has_format_chunk ? "fmt " : "data") + " chunk";
         return result;
+    }
+    std::uint32_t effective_tag = result.format_tag;
+    if (result.format_tag == 0xFFFEU) {
+        // The subtype is stored in fmt chunk bytes 24..27; find that chunk's data
+        // from the recorded offset rather than trusting the last chunk position.
+        for (const auto& chunk : result.chunks) {
+            if (chunk.id != "fmt ") continue;
+            const std::size_t payload = static_cast<std::size_t>(chunk.offset) + 8U;
+            effective_tag = u32le(bytes, payload + 24U);
+            break;
+        }
+    }
+    if ((effective_tag == 1U || effective_tag == 3U) && result.block_align != 0U) {
+        for (const auto data_size : data_chunk_sizes) {
+            if ((data_size % result.block_align) != 0U) {
+                result.error = "PCM/IEEE-float data chunk length is not a whole number of sample frames";
+                return result;
+            }
+        }
     }
     result.state = WavState::ValidMetadata;
     return result;
