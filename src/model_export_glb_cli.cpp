@@ -2,11 +2,13 @@
 #include <assimp/Exporter.hpp>
 #include <assimp/postprocess.h>
 #include <assimp/scene.h>
+#include "ps2asset/io/new_file_transaction.hpp"
 
 #include <algorithm>
 #include <array>
 #include <cctype>
 #include <cstdint>
+#include <exception>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -87,19 +89,30 @@ int main(int argc, char** argv) {
     }
 
     Assimp::Exporter exporter;
-    const aiReturn exported = exporter.Export(scene, "glb2", outputPath.string(), 0U);
-    if (exported != aiReturn_SUCCESS) {
-        fs::remove(outputPath, ec);
-        std::cerr << "ERROR: GLB export failed: " << exporter.GetErrorString() << '\n';
+    try {
+        ps2asset::io::NewFileTransaction output_transaction(outputPath);
+        const fs::path& tempPath = output_transaction.temporary_path();
+        const aiReturn exported = exporter.Export(scene, "glb2", tempPath.string(), 0U);
+        if (exported != aiReturn_SUCCESS) {
+            std::cerr << "ERROR: GLB export failed: " << exporter.GetErrorString() << '\n';
+            return 1;
+        }
+        if (!verify_glb_header(tempPath)) {
+            std::cerr << "ERROR: temporary output does not pass GLB v2 header/length validation\n";
+            return 1;
+        }
+        const auto outputBytes = fs::file_size(tempPath, ec);
+        if (ec) {
+            std::cerr << "ERROR: cannot read temporary GLB size: " << ec.message() << '\n';
+            return 1;
+        }
+        output_transaction.commit();
+        std::cout << "OK\ninput=" << inputPath.string() << "\noutput=" << outputPath.string()
+                  << "\nmeshes=" << scene->mNumMeshes << "\nmaterials=" << scene->mNumMaterials
+                  << "\noutput_bytes=" << outputBytes << "\n";
+        return 0;
+    } catch (const std::exception& ex) {
+        std::cerr << "ERROR: safe GLB export failed: " << ex.what() << '\n';
         return 1;
     }
-    if (!verify_glb_header(outputPath)) {
-        fs::remove(outputPath, ec);
-        std::cerr << "ERROR: output does not pass GLB v2 header/length validation; output removed\n";
-        return 1;
-    }
-    std::cout << "OK\ninput=" << inputPath.string() << "\noutput=" << outputPath.string()
-              << "\nmeshes=" << scene->mNumMeshes << "\nmaterials=" << scene->mNumMaterials
-              << "\noutput_bytes=" << fs::file_size(outputPath) << "\n";
-    return 0;
 }
