@@ -1,15 +1,42 @@
+# CMake / IDE output
 build/
+build-*/
 cmake-build-*/
-__pycache__/
-*.pyc
-*.user
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
 .vs/
 .idea/
-build*/
-plugins/*.dll
-plugins/*.so
-plugins/*.dylib
+*.user
+*.suo
 *.pdb
 *.ilk
 *.exp
 *.lib
+
+# Package/output folders and local-only research material
+dist/
+release_artifacts/
+vcpkg_installed/
+private/
+*.local.md
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Game data / user inputs must not be committed or bundled by default
+dataimg.zip
+game-assets/
+input-assets/
+local-test-assets/
+
+# Generated binaries
+*.exe
+*.dll
+*.so
+*.dylib
+*.pyc
+__pycache__/
