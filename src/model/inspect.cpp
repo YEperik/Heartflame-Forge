@@ -1,4 +1,5 @@
 #include "ps2asset/model/inspect.hpp"
+#include "ps2asset/model/containers.hpp"
 
 #include <algorithm>
 #include <array>
@@ -181,6 +182,22 @@ ModelInspectionResult inspect_model_bytes(const std::vector<std::uint8_t>& bytes
         result.warnings.emplace_back("Fewer than four bytes are available for header classification.");
     }
 
+    const auto sl01_scan = scan_embedded_sl01_blocks(bytes);
+    result.validated_sl01_blocks = static_cast<std::uint64_t>(sl01_scan.blocks.size());
+    result.sl01_signature_hits = sl01_scan.signature_hits;
+    result.sl01_rejected_candidates = sl01_scan.rejected_candidates;
+    result.sl01_scan_aborted_hit_limit = sl01_scan.scan_aborted_hit_limit;
+    if (sl01_scan.scan_aborted_hit_limit) {
+        result.warnings.emplace_back(
+            "SL01 range scan stopped after the 100000-signature safety limit; no ranges were accepted from that scan.");
+    } else if (sl01_scan.signature_hits > 0U && sl01_scan.blocks.empty()) {
+        result.warnings.emplace_back(
+            "SL01 signatures were found, but no candidate range passed bounds/overlap checks.");
+    }
+    for (std::size_t i = 0; i < sl01_scan.blocks.size() && i < 8U; ++i) {
+        result.first_sl01_block_offsets.push_back(sl01_scan.blocks[i].offset);
+    }
+
     result.markers = scan_markers(bytes);
     result.embedded_path_candidates = scan_path_candidates(bytes);
     if (result.markers.empty()) {
@@ -220,6 +237,24 @@ std::string format_model_report(const ModelInspectionResult& result) {
     } else {
         out << "SL01 wrapper: no\n";
     }
+
+    out << "\nValidated SL01 byte ranges (field@0x08 bounds check only)\n"
+        << "  block_count=" << result.validated_sl01_blocks
+        << " signature_hits=" << result.sl01_signature_hits
+        << " rejected_candidates=" << result.sl01_rejected_candidates
+        << " hit_limit_exceeded=" << (result.sl01_scan_aborted_hit_limit ? "yes" : "no")
+        << " offsets=";
+    if (result.first_sl01_block_offsets.empty()) {
+        out << "(none)";
+    } else {
+        for (std::size_t i = 0; i < result.first_sl01_block_offsets.size(); ++i) {
+            if (i) out << ", ";
+            out << "0x" << std::uppercase << std::hex
+                << result.first_sl01_block_offsets[i] << std::dec;
+        }
+        if (result.validated_sl01_blocks > result.first_sl01_block_offsets.size()) out << ", ...";
+    }
+    out << "\n";
 
     out << "\nObserved four-byte markers (counts + first offsets)\n";
     if (result.markers.empty()) {
