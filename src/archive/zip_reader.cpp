@@ -98,8 +98,14 @@ void replace_zip_entry(const std::string& archive_path, const std::string& entry
 #else
     namespace fs = std::filesystem;
     std::error_code ec;
-    const auto replacement_size = fs::file_size(replacement_file, ec);
-    if (replacement_size >
+const auto replacement_size = fs::file_size(replacement_file, ec);
+
+if (ec || replacement_size > max_replacement_size) {
+    throw std::runtime_error(
+        "Replacement file is missing or exceeds size limit");
+}
+
+if (replacement_size >
         static_cast<std::uintmax_t>(
             (std::numeric_limits<std::size_t>::max)()) ||
     replacement_size >
@@ -108,8 +114,9 @@ void replace_zip_entry(const std::string& archive_path, const std::string& entry
     throw std::runtime_error(
         "Replacement file is too large for this platform or stream API");
 }
-    }
-    std::vector<std::uint8_t> replacement(static_cast<std::size_t>(replacement_size));
+
+std::vector<std::uint8_t> replacement(
+    static_cast<std::size_t>(replacement_size));
     std::ifstream replacement_stream(replacement_file, std::ios::binary);
     if (!replacement_stream || (!replacement.empty() && !replacement_stream.read(reinterpret_cast<char*>(replacement.data()), static_cast<std::streamsize>(replacement.size()))))
         throw std::runtime_error("Unable to read replacement file");
