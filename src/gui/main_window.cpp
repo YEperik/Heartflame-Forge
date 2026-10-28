@@ -16,6 +16,7 @@
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QImageReader>
+#include <QIcon>
 #include <QLabel>
 #include <QListWidget>
 #include <QListWidgetItem>
@@ -158,8 +159,8 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
 }
 
 void MainWindow::buildUi() {
-    setWindowTitle(QStringLiteral("PS2 Asset Workbench 1.1.0  |  Modular Asset Lab"));
-    setWindowIcon(style()->standardIcon(QStyle::SP_ComputerIcon));
+    setWindowTitle(QStringLiteral("Heartflame Forge 1.3.0  |  Asset Workshop"));
+    setWindowIcon(QIcon(QStringLiteral(":/branding/heartflame-forge.png")));
     resize(1440, 900);
     setMinimumSize(1080, 680);
 
@@ -197,7 +198,7 @@ void MainWindow::buildUi() {
     auto* archiveAction = viewMenu->addAction(QStringLiteral("Archive Browser"));
     auto* binaryAction = viewMenu->addAction(QStringLiteral("Binary Inspector"));
     auto* helpMenu = menuBar()->addMenu(QStringLiteral("Bantuan"));
-    auto* aboutAction = helpMenu->addAction(QStringLiteral("Tentang PS2 Asset Workbench"));
+    auto* aboutAction = helpMenu->addAction(QStringLiteral("Tentang Heartflame Forge"));
 
     auto* toolbar = addToolBar(QStringLiteral("Aksi Utama"));
     toolbar->setMovable(false);
@@ -223,8 +224,8 @@ void MainWindow::buildUi() {
     connect(archiveAction, &QAction::triggered, this, [this]() { selectModule(ArchiveModule); });
     connect(binaryAction, &QAction::triggered, this, [this]() { selectModule(BinaryModule); });
     connect(aboutAction, &QAction::triggered, this, [this]() {
-        QMessageBox::about(this, QStringLiteral("Tentang PS2 Asset Workbench"),
-            QStringLiteral("<b>PS2 Asset Workbench 1.1.0</b><br>Desktop workbench modular C++17/CMake untuk eksplorasi aset game PS2.<br><br>Workspace terpisah: Texture, Archive, Binary, Model Inspector, Model Export GLB (Assimp opsional), Animation, Audio, Video/Stream, dan Text/Script.<br>Parser inti tetap terpisah dari GUI dan plugin Qt dapat menambahkan halaman baru.<br><br>Catatan: mesh/animasi custom .mdl, codec proprietary SDPK/ADSC, dan decoder PSS belum diimplementasikan. Setiap halaman menandai fitur yang hanya berupa riset."));
+        QMessageBox::about(this, QStringLiteral("Tentang Heartflame Forge"),
+            QStringLiteral("<b>Heartflame Forge 1.3.0</b><br>Desktop workbench modular C++17/CMake untuk eksplorasi aset game PS2.<br><br>Workspace terpisah: Texture, Archive, Binary, Model Inspector, Model Export GLB (Assimp opsional), Animation, Audio, Video/Stream, dan Text/Script.<br>Parser inti tetap terpisah dari GUI dan plugin Qt dapat menambahkan halaman baru.<br><br>Catatan: mesh/animasi custom .mdl, codec proprietary SDPK/ADSC, dan decoder PSS belum diimplementasikan. Setiap halaman menandai fitur yang hanya berupa riset."));
     });
 
     auto* root = new QWidget(this);
@@ -333,7 +334,7 @@ QWidget* MainWindow::buildDashboardPage() {
     layout->setContentsMargins(28, 26, 28, 24);
     layout->setSpacing(18);
 
-    auto* heading = new QLabel(QStringLiteral("PS2 Asset Workbench"), page);
+    auto* heading = new QLabel(QStringLiteral("Heartflame Forge"), page);
     heading->setStyleSheet(QStringLiteral("font-size: 28px; font-weight: 700; color: #1d2a3a;"));
     auto* subheading = new QLabel(QStringLiteral("Ruang kerja reverse engineering untuk aset PlayStation 2"), page);
     subheading->setStyleSheet(QStringLiteral("font-size: 14px; color: #59687a;"));
@@ -843,9 +844,12 @@ void MainWindow::saveSelectedTextureToNewZip() {
             QStringLiteral("%1 entry tekstur yang diedit telah diganti dalam arsip baru.\n\nOutput:\n%2\n\nArsip sumber tidak diubah.")
                 .arg(static_cast<qulonglong>(replacements.size())).arg(outputPath));
     } catch (const std::exception& error) {
-        if (outputCreated) QFile::remove(outputPath);
-        QMessageBox::critical(this, QStringLiteral("Gagal membuat ZIP modifikasi"), safeExceptionText(error));
-        appendLog(QStringLiteral("[Archive] Batch repack failed: %1").arg(safeExceptionText(error)));
+        QString message = safeExceptionText(error);
+        if (outputCreated) {
+            message += QStringLiteral("\n\nZIP output sudah terbuat, tetapi validasi lanjutan gagal. File tidak dihapus otomatis agar tidak berisiko menghapus file yang diubah proses lain. Periksa output secara manual: ") + outputPath;
+        }
+        QMessageBox::critical(this, QStringLiteral("Gagal memverifikasi ZIP modifikasi"), message);
+        appendLog(QStringLiteral("[Archive] Batch repack/verification failed: %1").arg(safeExceptionText(error)));
     }
 }
 

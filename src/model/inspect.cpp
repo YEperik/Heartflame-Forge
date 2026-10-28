@@ -218,7 +218,7 @@ ModelInspectionResult inspect_model_bytes(const std::vector<std::uint8_t>& bytes
 
 std::string format_model_report(const ModelInspectionResult& result) {
     std::ostringstream out;
-    out << "PS2 Asset Workbench — Read-only MDL Profile\n"
+    out << "Heartflame Forge — Read-only MDL Profile\n"
         << "===========================================\n"
         << "Name: " << result.name << '\n'
         << "Size: " << result.file_size << " bytes\n"

@@ -1,10 +1,13 @@
 #include "ps2asset/texture/tim2.hpp"
 #include "ps2asset/archive/zip_reader.hpp"
+#include "ps2asset/io/new_file_transaction.hpp"
 #ifdef PS2ASSET_HAS_PNG
 #include "ps2asset/image/png.hpp"
 #endif
 
 #include <algorithm>
+#include <charconv>
+#include <system_error>
 #include <cstdint>
 #include <exception>
 #include <fstream>
@@ -17,7 +20,7 @@
 
 namespace {
 void usage() {
-    std::cerr << "PS2 Asset Workbench - TIM2 CLI helper\n"
+    std::cerr << "Heartflame Forge - TIM2 CLI helper\n"
               << "Usage:\n"
               << "  ps2asset-texture info <input.tm2>\n"
               << "  ps2asset-texture replace-zip-entry <input.zip> <entry-path> <replacement.tm2> <output.zip>\n"
@@ -31,24 +34,38 @@ void usage() {
 #endif
 }
 
+bool parse_index(const char* text, std::size_t& index) {
+    if (text == nullptr) return false;
+    const std::string value(text);
+    if (value.empty() || !std::all_of(value.begin(), value.end(), [](unsigned char c) {
+            return c >= '0' && c <= '9';
+        })) return false;
+    unsigned long long parsed = 0U;
+    const auto result = std::from_chars(value.data(), value.data() + value.size(), parsed, 10);
+    if (result.ec != std::errc{} || result.ptr != value.data() + value.size() ||
+        parsed > static_cast<unsigned long long>(std::numeric_limits<std::size_t>::max())) return false;
+    index = static_cast<std::size_t>(parsed);
+    return true;
+}
+
 void write_ppm(const std::string& path, const ps2asset::texture::RgbaImage& image) {
-    std::ofstream out(path, std::ios::binary | std::ios::trunc);
-    if (!out) throw std::runtime_error("Cannot create output image: " + path);
-    out << "P6\n" << image.width << ' ' << image.height << "\n255\n";
-    for (std::size_t i = 0; i < image.pixels.size(); i += 4U) {
-        // PPM has no alpha. Composite over a neutral checker pattern for this CLI preview.
-        const std::size_t pixel = i / 4U;
-        const std::size_t x = pixel % image.width;
-        const std::size_t y = pixel / image.width;
-        const std::uint8_t bg = (((x / 8U) + (y / 8U)) % 2U == 0U) ? 48U : 72U;
-        const unsigned int a = image.pixels[i + 3U];
-        for (std::size_t c = 0; c < 3U; ++c) {
-            const unsigned int v = image.pixels[i + c];
-            const unsigned int mixed = (v * a + static_cast<unsigned int>(bg) * (255U - a) + 127U) / 255U;
-            out.put(static_cast<char>(mixed));
+    ps2asset::io::write_new_file_atomically(std::filesystem::path(path), [&image, &path](std::ostream& out) {
+        out << "P6\n" << image.width << ' ' << image.height << "\n255\n";
+        for (std::size_t i = 0; i < image.pixels.size(); i += 4U) {
+            // PPM has no alpha. Composite over a neutral checker pattern for this CLI preview.
+            const std::size_t pixel = i / 4U;
+            const std::size_t x = pixel % image.width;
+            const std::size_t y = pixel / image.width;
+            const std::uint8_t bg = (((x / 8U) + (y / 8U)) % 2U == 0U) ? 48U : 72U;
+            const unsigned int a = image.pixels[i + 3U];
+            for (std::size_t c = 0; c < 3U; ++c) {
+                const unsigned int v = image.pixels[i + c];
+                const unsigned int mixed = (v * a + static_cast<unsigned int>(bg) * (255U - a) + 127U) / 255U;
+                out.put(static_cast<char>(mixed));
+            }
         }
-    }
-    if (!out) throw std::runtime_error("Failed while writing PPM output: " + path);
+        if (!out) throw std::runtime_error("Failed while writing PPM output: " + path);
+    });
 }
 }
 
@@ -126,8 +143,11 @@ int main(int argc, char** argv) {
                           << ", image bytes=" << p.image_size
                           << ", CLUT bytes=" << p.clut_size
                           << ", mipmaps=" << static_cast<unsigned int>(p.mipmap_count)
-                          << ", import/replace=" << (p.supports_rgba8_palette_replace() ? "supported" : "unsupported")
-                          << '\n';
+                          << ", import/replace=" << (p.supports_rgba8_palette_replace() ? "supported" : "unsupported");
+                if (p.image_type == 5U && p.psm() != 19U) {
+                    std::cout << ", NOTE=PSM differs from common PSMT8 profile (19); raw metadata only, rendering is not verified";
+                }
+                std::cout << '\n';
             }
             return 0;
         }
@@ -135,14 +155,8 @@ int main(int argc, char** argv) {
         if (command == "export" || command == "export-png") {
             if (argc != 5) { usage(); return 2; }
             std::size_t index = 0;
-            try {
-                const auto parsed = std::stoull(argv[3]);
-                if (parsed > static_cast<unsigned long long>(std::numeric_limits<std::size_t>::max())) {
-                    throw std::out_of_range("picture index");
-                }
-                index = static_cast<std::size_t>(parsed);
-            } catch (...) {
-                throw std::runtime_error("Picture index must be a non-negative integer");
+            if (!parse_index(argv[3], index)) {
+                throw std::runtime_error("Picture index must contain decimal digits only and fit this platform");
             }
             const auto image = tim2.decode_picture(index);
             if (command == "export") {
@@ -165,14 +179,8 @@ int main(int argc, char** argv) {
         if (command == "replace-png") {
             if (argc != 6) { usage(); return 2; }
             std::size_t index = 0;
-            try {
-                const auto parsed = std::stoull(argv[3]);
-                if (parsed > static_cast<unsigned long long>(std::numeric_limits<std::size_t>::max())) {
-                    throw std::out_of_range("picture index");
-                }
-                index = static_cast<std::size_t>(parsed);
-            } catch (...) {
-                throw std::runtime_error("Picture index must be a non-negative integer");
+            if (!parse_index(argv[3], index)) {
+                throw std::runtime_error("Picture index must contain decimal digits only and fit this platform");
             }
             const std::filesystem::path output_path(argv[5]);
             if (std::filesystem::exists(output_path)) {

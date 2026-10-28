@@ -11,9 +11,9 @@
 
 int main(int argc, char* argv[]) {
     QApplication app(argc, argv);
-    QApplication::setApplicationName("PS2 Asset Workbench");
-    QApplication::setOrganizationName("PS2AssetWorkbench");
-    QApplication::setApplicationVersion("1.1.0");
+    QApplication::setApplicationName("Heartflame Forge");
+    QApplication::setOrganizationName("HeartflameForge");
+    QApplication::setApplicationVersion("1.3.0");
 
     if (QStyle* style = QStyleFactory::create("Fusion")) {
         QApplication::setStyle(style);
@@ -21,6 +21,13 @@ int main(int argc, char* argv[]) {
 
     MainWindow window;
     if (app.arguments().contains(QStringLiteral("--smoke-test"))) {
+        // Exercise widget creation and initial show/layout, not only construction.
+        window.show();
+        app.processEvents();
+        if (!window.isVisible()) {
+            qCritical("GUI startup smoke test failed: main window did not become visible.");
+            return 6;
+        }
         const auto* navigation = window.findChild<QListWidget*>(QStringLiteral("moduleNavigation"));
         const auto* stack = window.findChild<QStackedWidget*>(QStringLiteral("moduleStack"));
         if (navigation == nullptr || stack == nullptr || navigation->count() != stack->count() || navigation->count() < 7) {

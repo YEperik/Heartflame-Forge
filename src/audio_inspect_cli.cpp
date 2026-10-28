@@ -13,14 +13,6 @@ namespace fs = std::filesystem;
 namespace {
 constexpr std::uintmax_t kMaxInputBytes = 64U * 1024U * 1024U;
 
-std::string header_prefix(const std::vector<std::uint8_t>& bytes) {
-    std::string out;
-    const std::size_t n = std::min<std::size_t>(bytes.size(), 4096U);
-    out.reserve(n);
-    for (std::size_t i = 0; i < n; ++i) out.push_back(static_cast<char>(bytes[i]));
-    return out;
-}
-
 }  // namespace
 
 int main(int argc, char** argv) {

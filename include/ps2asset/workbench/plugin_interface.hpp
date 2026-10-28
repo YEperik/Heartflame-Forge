@@ -20,5 +20,5 @@ public:
 
 }  // namespace ps2asset::workbench
 
-#define PS2ASSET_WORKBENCH_PLUGIN_IID "org.ps2asset.workbench.IWorkbenchPlugin"
+#define PS2ASSET_WORKBENCH_PLUGIN_IID "org.ps2asset.workbench.IWorkbenchPlugin/1.0"
 Q_DECLARE_INTERFACE(ps2asset::workbench::IWorkbenchPlugin, PS2ASSET_WORKBENCH_PLUGIN_IID)
