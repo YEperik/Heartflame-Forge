@@ -11,6 +11,7 @@
 
 namespace ps2asset::workbench {
 
+PluginManager::PluginManager() = default;
 PluginManager::~PluginManager() = default;
 
 namespace {
