@@ -697,7 +697,7 @@ void MainWindow::importSelectedTexture() {
     if (image.size() != QSize(pic.width, pic.height)) {
         const auto answer = QMessageBox::question(this, QStringLiteral("Sesuaikan dimensi?"),
             QStringLiteral("Gambar berukuran %1×%2, sedangkan target adalah %3×%4.\n\nSkalakan otomatis ke ukuran tekstur?")
-                .arg(image.width()).arg(image.height()).arg(pic.width).arg(pic.height()),
+                .arg(image.width()).arg(image.height()).arg(pic.width).arg(pic.height),
             QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes);
         if (answer != QMessageBox::Yes) return;
         image = image.scaled(QSize(pic.width, pic.height), Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
