@@ -21,7 +21,7 @@ struct LoadedPluginModule {
 
 class PluginManager final {
 public:
-    PluginManager() = default;
+    PluginManager();
     ~PluginManager();
     PluginManager(const PluginManager&) = delete;
     PluginManager& operator=(const PluginManager&) = delete;
