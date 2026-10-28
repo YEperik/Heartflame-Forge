@@ -100,8 +100,8 @@ void replace_zip_entry(const std::string& archive_path, const std::string& entry
     std::error_code ec;
     const auto replacement_size = fs::file_size(replacement_file, ec);
     if (ec || replacement_size > max_replacement_size) throw std::runtime_error("Replacement file is missing or exceeds size limit");
-    if (replacement_size > std::numeric_limits<std::size_t>::max() ||
-        replacement_size > static_cast<std::uintmax_t>(std::numeric_limits<std::streamsize>::max())) {
+    if (replacement_size > std::numeric_limits(std::numeric_limits<T>::max)() ||
+        replacement_size > static_cast<std::uintmax_t>(std::numeric_limits<T>::max)()) {
         throw std::runtime_error("Replacement file is too large for this platform or stream API");
     }
     std::vector<std::uint8_t> replacement(static_cast<std::size_t>(replacement_size));
